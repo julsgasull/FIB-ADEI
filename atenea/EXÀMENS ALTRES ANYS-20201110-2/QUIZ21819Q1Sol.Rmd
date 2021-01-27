@@ -1,0 +1,233 @@
+---
+title: "1819Q2Quiz2"
+author: "Lídia Montero"
+date: "December, 19th 2018"
+output: 
+  pdf_document: 
+    toc: true
+    toc_depth: 3
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+# Third party Insurance Data
+
+Third party insurance is a compulsory insurance for vehi-cle owners in Australia. It insures vehicle owners against injury caused to other drivers, passengers or pedestrians, as a result of an accident. This data set records the number of third party claims in a twelve-month period between 1984 and 1986 in each of 176 geographical areas (local gov-ernment areas) in New South Wales, Australia. Areas are grouped into 13 statistical divisions. Other recorded variables are the number of accidents, the number of people killed or injured and population.
+
+```{r,echo=FALSE}
+rm(list=ls())
+options(contrasts=c("contr.treatment","contr.treatment"))
+library(car)
+library(FactoMineR)
+library(factoextra)
+library(missMDA)
+#library(insuranceData)
+#data(Thirdparty)
+#write.table(Thirdparty,"Thirdparty_raw.csv")
+#df<-read.table("Thirdparty_raw.csv",header=T,sep=";")
+#save.image("Thirdparty_raw.RData")
+
+#dir<-setwd("D:/Dropbox/DOCENCIA/FIB-ADEI/EXAMENS/1819Q1")
+dir<-setwd("D:/Dropbox/DOCENCIA/FIB-ADEI/EXAMENS/1819Q1")
+load(paste0(dir,"/Thirdparty.RData"))
+
+#save.image("Thirdparty.RData")
+summary(df)
+names(df)
+sd(df$claims)
+
+```
+
+**Consider a model for the number of claims in an area as a function of the number of accidents. A scatterplot of claims against accidents and boxplot of involved variables are shown**
+
+## Point 1
+
+**Claims is considered the target variable. Determine the most promising variables for forescasting purposes of the selected target. **
+
+Output from condes() procedure in FactoMineR library is included. The number of accidents, killed peple, population and population_density are numeric variables directly associated to the target: from more intense to less intense.
+
+Factors, from more to intese to less intense, f.hcla (cluster), statistical division (sd) and f.bigcity are globally associated to the number of claims (target). 
+
+Number of claims for Cluster-2 is 1185 units over the mid-point (1449) of the mean number of claims per LGA (263.25 and 2635.13) in each cluster, while Cluster-1 is -1185 units the mid-point. LGA with big-cities have significantly more accidents. Statistical district 1 is 1324 units over the grand mean of claims while SD-12, SD-7 and SD-9 are significantly under the grand mean (465).
+
+
+```{r}
+# Point 1
+dim(df)
+names(df)
+sd(df$claims)
+par(mfrow=c(1,2))
+plot(df$accidents,df$claims,main="Plot claims(Y) vs accidents(X)",pch=19,col=(as.numeric(df$f.bigcity)))
+#legend(locator(n=1),legend=levels(df$f.bigcity), col=c(1,2),pch=19)
+Boxplot(df[,3:4],main="Boxplot claims and accidents",col=heat.colors(2))
+par(mfrow=c(1,1))
+
+names(df)
+condes(df[,2:12],2)
+tapply(df$claims,df$f.hcla,mean)
+
+mean(as.vector(tapply(df$claims,df$f.hcla,mean)))
+mean(as.vector(tapply(df$claims,df$sd,mean)))
+mean(df$claims) 
+```
+
+## Point 2
+
+** A simple regression model for claims using the number of accidents is discussed. Fill the blanks.**
+
+```{r}
+m1<-lm(claims~accidents,data=df)
+summary(m1)
+```
+
+## Point 3
+
+**3. Check default diagnostic residuals and indicate what is shown in each available plot.**
+
+Upper-left plot displays a concentration of points for LGA with small predicted number of accidents. Large residuals can be seen for Fairfield and some other LGAs without identifier. Negative resisuals also appear, Sydney an unsual observation. 
+
+Upper-right shows standarized residuals fit to standard normal distribution that clearly fails. Fairfield is a residual outlier, but deviation from the line indicates some other problems in residual distribution.
+
+Lower-left: the model is heterokedastic as indicated by the smoother. A transformation of the target would lead to improve in constant variance.
+
+Lower-right: Sydney is an unusual observation (highest leverage), but the combination of leverage and missfit for Fairfield makes this LGA to become an influent data. 
+
+```{r}
+par(mfrow=c(2,2))
+plot(m1,id.n=5)
+par(mfrow=c(1,1))
+
+```
+
+
+## Point 4
+
+**4.	An alternative model (m2) using logarithm transformation for both variables in (m1) is calculated. Determine pros and cons of each model.**
+
+Upper-left plot displays a homogeneous prediction range of points for LGA . Large residuals can be seen for Brokenhill and some other LGAs without identifier. Negative resisuals are remarkable for Windouran, Severn, Cohargo and Unincorporated LGA areas. 
+
+Upper-right shows standarized residuals fit to standard normal distribution that fails, but it is much better than m1. Not remarkable residual outliers seem to be present despite deviation from the line that indicates problems with normality assumption for residuals.
+
+Lower-left: Smoother is not flat due to observations with extreme outliers, but we are on the good way. Additional explanatory variables are needed.
+
+Lower-right: Influent data can not be discussed according to the output. High leverage observations exist: Cohargo and Windouran. 
+
+```{r}
+summary(df)
+m2<-lm(log(claims+1)~log(accidents),data=df)
+summary(m2)
+par(mfrow=c(2,2))
+plot(m2,id.n=5)
+par(mfrow=c(1,1))
+```
+
+## Point 5
+
+**5.	Write the prediction equation for model (m2) and predict the number of claims for a fictious  LGA with a number of accidents in the mean of New South Wales LGAs.**
+
+Prediction equation: log(Y+1)=-2.3+1.21log(X) -> Y=(e^(-2.3))*(X^(1.21))-1
+
+Point prediction: mean(accidents)=1153
+Y = (exp(-2.3117))*(1153.097^(1.2093))-1=498.7535 claims
+
+```{r}
+mean(df$accidents)
+summary(m2)
+exp(predict(m2,newdata=data.frame(accidents=mean(df$accidents))))-1 
+```
+
+## Point 6
+
+**6.	A new (m3) two-way anova model is stated for the logarithm of claims. Interpret the model indicating the predicted number of claims for each defined group. Do you have to consider the interactions in the modeling ?.**
+
+Model (m3) explains 40% of number of claims variability, so it is not very good (sixty percent is still left). The interaction term between the 2 factors can not be omitted (pvalue 0.0178 in net-effect test output). Main-effects of factors should be both retained since interactions are significant.
+
+Big-City-No and Cluster-1 :  log(Y+1)=4.8
+Big-City-No and Cluster-2 :  log(Y+1)=4.8+0+2.59
+Big-City-Yes and Cluster-1 : log(Y+1)=4.8-1.0827+0
+Big-City-Yes and Cluster-2 : log(Y+1)=4.8-1.0827+2.59+1.76
+
+The scale of accidents and predictions in accident scale need to exponentiate the former values in the logarithmic scale.
+
+```{r}
+table(df$f.bigcity,df$f.hcla)
+#interaction.plot(df$f.bigcity,df$f.hcla,df$claims)
+#interaction.plot(df$f.hcla,df$f.bigcity,df$claims)
+m3<-lm(log(claims+1)~f.bigcity*f.hcla,data=df)
+data.frame(f.bigcity=c(rep(c("BigC-NO"),2),rep(c("BigC-YES"),2)),f.hcla=rep(c("Cluster-1","Cluster-2")))
+predict(m3,newdata=data.frame(f.bigcity=c(rep(c("BigC-NO"),2),rep(c("BigC-YES"),2)),f.hcla=rep(c("Cluster-1","Cluster-2"))))
+exp(predict(m3,newdata=data.frame(f.bigcity=c(rep(c("BigC-NO"),2),rep(c("BigC-YES"),2)),f.hcla=rep(c("Cluster-1","Cluster-2")))))
+
+summary(m3)
+Anova(m3)
+```
+
+## Point 7
+
+**7.	A new model using numeric explanatory variables and available factors is being considered. Which are the significant variables for model building purposes? Comment goodness of fit..**
+
+Despite AIC criteria for selection of the best model m5 retains log(accidents):f.bigcity interaction. But net effects indicate that no significance according to Fisher test for forecasting purposes exits. Log(ki) and log(accidents) have very low pvalues in the net-effect test that it is affected in log(accidents) by a perturbation from the interaction. Main-effects in net-effects Anova(m5) testing should not be considered. Just, a new m6 model with the interaction has to be estimated and net-effects tests interpreted again (no output included in the exam).
+
+```{r}
+m4<-lm(log(claims+1)~(log(population)+log(ki)+log(accidents)+pop_density)*(f.bigcity+f.hcla), data=df)
+m5<-step(m4)
+Anova(m5)
+# A new model without the interaction should be checked to assess factor significancies
+m6<-lm(log(claims+1)~(log(ki)+log(accidents))+(f.bigcity+f.hcla), data=df)
+Anova(m6)
+```
+
+
+## Point 8
+
+*8.	Model (m5) is chosen for a detailed analysis. Comment goodness of fit and predict the number of claims for a fictitious LGA unit in cluster 2 having variables number of killed/injured and number of accidents on the mean.*
+
+Coefficient of determination indicates that the model explains 94% of target variability, nevertheless it is not optimal since the interaction term is redundant. A simplified model has to be stated.
+
+In terms of interpretation: 
+Prediction equation - BigCity-NO: log(Y+1)=-2.67+0.65log(650.62)+0.67log(1153.1)+0-0.257+0 -> Y=exp(0-2.67+0.65*log(650.62)+0.67*log(1153.1)+0-0.257+0)-1 = 392.6 claims
+
+Prediction equation - BigCity-YES: log(Y+1)=-2.67+0.65log(650.62)+(0.67+0.106)log(1153.1)-0.823-0.257 -> Y=exp(0-2.67+0.65*log(650.62)+(0.67+0.106)*log(1153.1)-0.823-0.257)-1 = 362.1 claims
+
+```{r}
+summary(m5)
+mean(df$ki);mean(df$accidents)
+
+predict(m5,newdata=data.frame(f.bigcity=c("BigC-NO","BigC-YES"),f.hcla=c("Cluster-2"),ki=mean(df$ki),accidents=mean(df$accidents)))
+exp(predict(m5,newdata=data.frame(f.bigcity=c("BigC-NO","BigC-YES"),f.hcla=c("Cluster-2"),ki=mean(df$ki),accidents=mean(df$accidents))))-1
+
+```
+
+## Point 9
+**9.	Make a rough assessment of the quality of the model based on the first impression of the diagnosis of residuals for (m5).**
+
+Upper-left: A random pattern seems to be present, but some observations are far away from the cloud of point with remarkable lack of fit (Brokenhill, Cohargo). Residual outliers are present.
+
+Upper-right: Normal distribution of residuals is not met. Negative tails show big discrepancies to normality. Brokenhill is an outlier.
+
+Below-left: Variance seems to be constant despite the perturbations caused by unsual data (far from the cloud of points, as Windouran, Cohargo)
+Below-right: residual outliers and unsual data are present. Influent data can not be assessed with the plot.
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(m5,id.n=5)
+par(mfrow=c(1,1))
+
+```
+
+## Point 10
+
+**10.	Indicate whether observations 182, 366 and 254 are residual outliers or influent data or none of both. Justify your answer in terms of residuals, leverage and Cook's distance.**
+
+Bombala is unusual, large leverage. Residual is not large and causes no bad influence to parameter estimates
+Brokenhill shows lack of fit (residual outlier). No leverage and no influence.
+Cohargo shows lack of fit and remarkable large Cook's distance: it is an influent observation.
+
+```{r}
+influencePlot(m5)
+```
+
+
+
