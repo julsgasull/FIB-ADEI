@@ -1,0 +1,343 @@
+---
+title: "Q2 ADEI_1920Quiz2"
+author: "Júlia Gasull"
+date: \today
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+
+# First setups
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo = T, results = 'hide'}
+if(!is.null(dev.list())) dev.off()  # Clear plots
+rm(list=ls())                       # Clean workspace
+```
+
+## Load Required Packages for this deliverable
+We load the necessary packages and set working directory
+```{r echo = T, results = 'hide', message=FALSE, error=FALSE, warning=FALSE}
+setwd("~/Documents/uni/FIB-ADEI/exams/Course 2019-20 Q1 Datasets for Quiz 1 and 2-20201217")
+filepath<-"~/Documents/uni/FIB-ADEI/exams/Course 2019-20 Q1 Datasets for Quiz 1 and 2-20201217"
+
+# Load Required Packages
+options(contrasts=c("contr.treatment","contr.treatment"))
+requiredPackages <- c("missMDA","chemometrics","mvoutlier","effects","FactoMineR","car","lmtest","ggplot2","moments","factoextra","RColorBrewer","dplyr","ggmap","ggthemes","knitr")
+
+missingPackages <- requiredPackages[!(requiredPackages %in% installed.packages()[,"Package"])]
+if(length(missingPackages)) install.packages(missingPackages)
+lapply(requiredPackages, require, character.only = TRUE)
+```
+
+## Load processed data from last deliverable
+```{r}
+load(paste0(filepath,"/RiskyTransport.RData"))
+summary(df)
+```
+
+# Enunciat
+
+1793 opcions per part de 561 individus d'un mode de transport des de / cap a l'aeroport de Freetown (Sierra Leone) fins al centre de la ciutat. Aquest problema explota un entorn de transport inusual per generar part del primer valor de preferència revelat d'una vida estadística (VSL) estimat a partir d'un entorn de baixos ingressos. 
+
+Hi ha quatre alternatives disponibles: ferri, helicòpter, taxi aquàtic i aerodeslizador.
+
+Una característica sorprenent de l’estudi és que totes aquestes alternatives van experimentar accidents mortals en els darrers anys, de manera que el risc de mortalitat no és menyspreable i difereix molt d’una alternativa a una altra. 
+
+Per exemple, les probabilitats de morir amb el taxi aquàtic i l’helicòpter són respectivament de 2,55 i 18,41 de cada 100.000 viatges de viatgers.
+
+# Descripció de les variables
+
+* id	 Individual id (not to be used in this exercise)
+```{r}
+df$id <- NULL
+```
+
+* choice	 1 for the chosen mode
+* mode	 One of Helicopter, (not to be used in this exercise), WaterTaxi (a small craft for 12 to 18 pax), Ferry, and Hovercraft
+* cost	 the generalised cost of the transport mode (US$) – numeric target
+* risk	 The fatality rate, numbers of death per 100,000 trips for the selected mode
+* weight	 Weights (not to be used in this exercise)
+* seats	 Level of seat availability - comfort (Likert scale 1 to 5, transformed to 0 to 1 scale)
+* noise	Level for less noise disturbance (Likert scale 1 to 5, transformed to 0 to 1 scale)
+* crowdness	Level for less crowdedness (Likert scale 1 to 5, transformed to 0 to 1 scale)
+* convloc	Level of convenience location for the transfer (Likert scale 1 to 5, transformed to 0 to 1 scale)
+* clientele	Level of quality of ‘trip makers’ (Likert scale 1 to 5, transformed to 0 to 1 scale)
+* chid	 Choice situation id (not to be used in this exercise)
+* african	 yes if born in Africa, no otherwise
+* lifeExp	 declared life expectancy
+* dwage	 declared hourly wage
+* iwage	 imputed hourly wage
+* educ	 level of education, one of low and high
+* fatalism	 self-ranking of the degree of fatalism
+* gender	 gender, one of female and male
+* age	 age
+* haveChildren	 yes if the traveler has children, no otherwise
+* swim	 yes if the traveler knows how to swim, 'no’, otherwise
+* noalt	Number of available alternatives for the selected choice
+
+
+S’estimen les compensacions que els individus estan disposats a fer entre el risc de mortalitat i el cost mentre viatgen des de i cap a l’aeroport internacional de Sierra Leone. 
+
+La configuració i el conjunt de dades original ens permeten abordar algunes qüestions típiques de variables i també comparar les estimacions de VSL per a viatgers de diferents països, tots ells que s’enfronten a la mateixa situació d’elecció. 
+
+L’estimació mitjana de VSL per als viatgers africans de la mostra és de 577.000 dòlars EUA, en comparació amb 924.000 dòlars nord-americans per als no africans. 
+
+Les dues covariables d’interès són el cost (el cost generalitzat en unitat de PPP de dòlars, no les lleons) i el risk (mortalitat per cada 100.000 viatges de viatgers). 
+
+La variable de risc, que és purament alternativa, no permet estimar les interceptacions de les alternatives. 
+
+Per evitar problemes d'endogeneïtat, els autors introdueixen com a marques de covariables que els individus van donar a 5 atributs de les alternatives: comfort, noise level, crowdedness, convenience and transfer location and the "quality" of the clientele.
+
+*Centrem-nos en el cost del viatge (variable de cost). En primer lloc, restringiu el vostre conjunt de dades actiu a observacions que incloguin 4 alternatives disponibles (noalt = 4) i l'elecció real (elecció = 1).* 
+```{r}
+table(df$noalt, df$choice)
+sel <- which(df$noalt==4 & df$choice==1); length(sel)
+df <- df[sel,]
+
+df$noalt <- NULL
+df$choice <- NULL
+
+
+names(df)
+summary(df)
+```
+
+*En segon lloc, definiu un nou factor binari que contingui l’elecció WaterTaxi enfront d’altres.*
+```{r}
+df$f.water_taxi[(df$mode == "WaterTaxi")] = "Yes"
+df$f.water_taxi[(df$mode != "WaterTaxi")] = "No"
+df$f.water_taxi <- factor(df$f.water_taxi)
+summary(df$f.water_taxi)
+```
+
+
+*1. Indiqueu mitjançant eines d’exploració de dades quines són les variables més associades globalment a la variable de resposta (cost).*
+```{r}
+names(df)
+res.con<-condes(df,2)
+```
+
+```{r}
+res.con$quanti
+```
+
+Quantitatives:
+
+* dwage       
+* iwage       
+* crowdness   
+* noise      
+* convloc     
+* seats
+
+```{r}
+res.con$category
+```
+
+Categòriques:
+* mode=Ferry       -46.807796 5.407860e-22
+* f.water_taxi=Yes  14.881103 8.924484e-09
+* f.water_taxi=No  -14.881103 8.924484e-09
+* mode=Hovercraft   10.033656 4.388458e-06
+* swim=swim.Yes      5.579331 3.240303e-02
+* swim=swim.No      -5.579331 3.240303e-02
+
+
+Es pot utilitzar un mètode condes() al paquet FactoMineR. Només s’ha d’abordar l’associació global. L’associació global del cost amb variables numèriques es mostra mitjançant el coeficient de correlació de Pearson i els valors de la hipòtesi nul·la «coeficient de correlació igual a 0». 
+
+Es correlaciona positivament amb una intensitat elevada amb el dwage, iwage i es mostra menys intensitat per a puntuacions numèriques multitud, soroll i convlocació. Es mostra una relació inversa indicada per un coeficient de correlació negatiu per a l'expansió i el risc de la vida, però no és molt intensa.
+
+Les variables factorials relacionades globalment amb el cost són el mode de transport seleccionat (baixa intensitat) i gairebé insignificants són la capacitat de natació (nedar) i el factor binari WaterTaxi.
+
+*2. Calculeu el model lineal que explica el cost de la transferència del salari imputat (iwage) i el mode factor: interpreteu les línies de regressió i avalueu-ne la qualitat global. Quin és el percentatge de variabilitat de cost que s’explica pel mode de transport?*
+
+El model complet d’Ancova (efectes i interaccions principals) té 8 paràmetres i, segons les proves d’Anova () per a efectes nets, les interaccions són significatives una vegada que els efectes principals per a iwage i mode ja s’han inclòs al model. 
+
+La bondat d’ajust es pot avaluar amb R2.
+
+El 80,46% de la variabilitat de l’objectiu s’explica pel model. 
+
+Cal introduir el mode de transport al model com a efecte principal i interacció amb iwage. El model que només conté iwage té un R2 del 58,73%, de manera que gairebé el 21% de la variabilitat de l'objectiu s'explica pel mode. El model additiu no és la solució: cal interaccions.
+
+Interpretació del model:
+* Per al mode == Helicòpter       Y = (37,14 + 0)     + (2,33 + 0   ) * iwage
+* Per al mode == WaterTaxi        Y = (37.14 + 23.16) + (2.33 - 1.49) * iwage
+* Per al mode == Ferri            Y = (37,14 - 33,57) + (2,33 - 0,66) * iwage
+* Per al mode == Hovercraft       Y = (37,14 + 55,95) + (2,33 - 1,85) * iwage
+
+
+```{r}
+model_1 <- lm(cost ~ iwage*mode,data=df)
+summary(model_1)
+Anova(model_1)
+
+model_2 <- lm(cost ~ iwage,data=df)
+summary(model_2)
+```
+
+*3. Calculeu un model lineal per al cost objectiu utilitzant totes les variables numèriques disponibles. Hi ha problemes de colinealitat al model? Justifiqueu la solució per eliminar la colinealitat.*
+El model que utilitza variables numèriques ha de contenir risc, fatalisme, edat, lifeExp com a característiques del fabricant de viatges i puntuacions numèriques de seients, soroll, multitud, convlocació i clientela. 
+
+El model explica el 65,88% de la variabilitat de costos. 
+
+Només els efectes nets de multitud i d'efecte són significatius al llindar habitual del 5%, però el valor de soroll no ho és fins ara i s'ha d'incloure també com a variable notable. 
+
+Utilitzant el mètode vif, el parell de soroll i multitud sembla estar correlacionat i el parell d’edat i lifeExp també. 
+
+Heu de conservar una variable en cada parell, ja sigui la més correlacionada o la més fiable: trio multitud per resoldre el primer problema de parell i l'edat del segon (variable més objectiva que lifeExp). 
+
+Podeu veure que m4 que conté tots els números, excepte el soroll i lifeExp, ha resolt problemes de colineari. 
+
+Si s’eliminen variables no significatives, només es conserven els valors i la multitud.
+
+```{r}
+model_3 <- lm(
+  cost~
+    risk +
+    seats +
+    noise +
+    crowdness +
+    convloc +
+    clientele +
+    lifeExp +
+    iwage +
+    fatalism +
+    age   
+  ,data=df
+); summary(model_3)
+vif(model_3)
+
+
+model_4<-lm(
+  cost~
+    risk+
+    seats+
+    crowdness+
+    convloc+
+    clientele+
+    age+
+    iwage+
+    fatalism
+  ,data=df
+); summary(model_4)
+vif(model_4)
+
+
+model_5<-step(model_4,k=log(nrow(df))); summary(model_5)
+
+```
+
+*4. Un cop proposat el millor model de cost objectiu que utilitza variables numèriques explicatives, cal incloure algun efecte principal significatiu? I les interaccions? Justifiqueu la vostra resposta.*
+
+Les transformacions a variables explicatives no es consideren a l’exercici, però sí que s’haurien de provar en un estudi real. 
+
+Es considera el model m7 <-lm (cost ~ multitud + iwage + mode + sexe + african + educ + haveChildren + swim, data = df) i Anova (m7) mostra que les variables so me són redundants, essent només crowdness, iwage, mode, gènere, africà i e duc aquells amb efectes nets significatius. 
+
+Les interaccions entre factors i covariables estan incloses: alguns missatges de coeficients aliats indiquen un problema d’especificació: les interaccions de mode i multitud no es poden calcular, de manera que no es té en compte la interacció de mode i multitud. 
+
+Després del càlcul i reducció del model model_8 mitjançant el mètode step () amb monitoratge BIC, un model final (m9) que conté:
+
+cost ~ iwage + mode + crowdness + gender + african + educ + iwage:mode + crowdness:african + crowdness:educ + iwage:african
+
+És un model complex que explica el 84% de la variabilitat de costos.
+
+```{r}
+model_7<-lm(cost~crowdness+iwage+mode+gender+african+educ+haveChildren+swim, data= df)
+summary(model_7)
+Anova(model_7)
+model_8<-lm(cost~(crowdness+iwage)*(mode+gender+african+educ+haveChildren+swim), data=df) # Some crwodness:mode parameters can not be estimated
+summary(model_8)
+Anova(model_8)
+model_8<-lm(cost~iwage*mode+(crowdness+iwage)*(gender+african+educ+haveChildren+swim), data=df)
+summary(model_8)
+Anova(model_8)
+
+model_9<-step(model_8,k=log(nrow(df)))
+summary(model_9)
+Anova(model_9)
+```
+
+*5. Seleccioneu el millor model disponible fins ara. Suposem una observació sobre la mediana de les variables numèriques i els nivells de referència dels factors. Calculeu un interval de confiança del 90% per al cost de transferència previst.*
+Es pot respondre fàcilment a aquesta pregunta mitjançant el mètode predict (). El meu millor model és model_1: el mode on e amb iwage *, ja que explica gairebé el 80% de l'objectiu i és més senzill que m9 (explicant el 84%). Les respostes que inclouen el millor model obtingut després de la pregunta 5 també s'han considerat correctes.
+La mitjana de iwage és 27.96236 i el nivell de referència per al mode és "Helicopter"
+Per al mode == Helicòpter Y = (37,14 + 0) + (2,33 + 0) * iwage = 37,14 + 2,33 * 27,96 = 102,2525 $ és la valoració puntual. L'interval de confiança del 90% del cost previst no es pot calcular fàcilment sense utilitzar el mètode predict (model, newdata =.) A R.
+
+```{r}
+predict(model_1,newdata=data.frame(iwage=median(df$iwage),mode="Helicopter"),interval="prediction",level=0.9)
+```
+
+*6. Valora gràficament el millor model obtingut fins ara. Avalueu la presència de valors atípics en els residus estudiats amb un nivell de confiança del 95%. Indiqueu quines són aquestes observacions i per què mostren falta d’ajust.*
+De nou, model_1 és el meu millor model fins ara, però també pot ser el millor model obtingut a la pregunta 4
+usat. El diagnòstic demostra que el model no és bo. Com que es tracta d’una pregunta en un examen, vosaltres
+heu de respondre a la manca de problemes d’ajust. Els residus absoluts estudiats superiors a 3,0 es consideren
+tliers i corresponen a les observacions 45 i 46 en l’ordre del registre df o els noms de pila “
+627 ”i“ 631 ”. Aquests registres pertanyen a dones joves per les quals han pagat molts diners
+un servei d’hovercraft fins al centre de la ciutat. Hi ha dades influents i les transformacions serien n
+Es van obtenir variables explicatives i resultats, però aquest no és l'objectiu d'aquest examen.
+
+```{r}
+qnorm(0.975)
+ll<-which(abs(rstudent(model_1))>qnorm(0.975));ll;length(ll)
+df[ll,]
+ll<-which(abs(rstudent(model_1))>3.0);ll
+df[ll,]
+```
+
+*7. Estudiar la presència d’observacions de dades influents a priori i a posteriori. Indiqueu els llindars que s’han d’aplicar a l’estadística implicada en el diagnòstic.*
+```{r}
+influencePlot(model_1,id=list(method="noteworthy",n=3))
+3*mean(hatvalues(model_1))
+llhii<-which(hatvalues(model_1)>3*mean(hatvalues(model_1)));length(llhii)
+```
+
+Fàcilment utilitzant influencePlot (model). Els usuaris d’helicòpters són només 2 a la mostra i aquestes són les dades influents: no hi ha cap model que pugui tractar 4 modes donada la baixa quota de mercat de l’helicòpter. Aquestes observacions s’han d’eliminar i s’ha de repetir l’exercici de nou.
+
+```{r}
+influencePlot(model_1)
+df[c("779","4785"),]
+table(df$mode)
+```
+
+
+*8. El factor d’elecció binària WaterTaxi és el nou objectiu a tractar. Calculeu un model de logit que inclogui seients, multitud, covariables de convlocació i factors educatius i de natació. Discutiu l'adequació del model tenint en compte les tendències marginals i les parcel·les residuals.*
+Es mostra certa manca d’ajust a les parcel·les marginals per a seients i principalment a les puntuacions de gent, de totes maneres, les parcel·les residuals mostren un greix més suau per a l’ajust global (última trama, just a sota). Tots els factors i covariables tenen efectes nets significatius segons el mètode Anova (). No hi ha cap arxiu de collina al model.
+Com que la desviació residual és de 376,95 en 411 graus de llibertat i les dades desagregades són el tipus d’aquest conjunt de dades, mitjançant la pràctica «regla general» que indica que la desviació residual no ha de ser inferior a d.ll. i això es manté com es mostra a la sortida.
+
+```{r}
+m20<-glm(f.water_taxi~seats+crowdness+convloc+educ+swim, family=binomial, data=df) 
+summary(m20)
+Anova(m20,test="LR")
+vif(m20)
+```
+
+*9. Interpretar les equacions del model i els efectes en l’escala de probabilitats dels factors implicats.*
+• 𝛾𝛾1 = 0 𝛾𝛾2 = 𝟏𝟏. 𝟏𝟏𝟏𝟏𝟏𝟏𝟏𝟏 for factor educ, where level 1 is education-low and 2 is education-
+high.
+• 𝛿𝛿 = 0 𝛿𝛿 = 𝟏𝟏. 𝟕𝟕𝟕𝟕𝟕𝟕𝟕𝟕 for factor swim, where level 1 is swim-No and 2 is swim-Yes
+• There are as many model equations as 2 x 2= 4 (product of number of levels for factor s educ and swim)
+Interpretation of the model in the odds scale:
+Increasing by 0.1 units seats scored then exp(-2.47*0.1)= 0.7811407 -> 100*(1-0.7811)= 22%, the odds of the probability of choosing WaterTaxi decreases by 22%, all else being equal.
+Increasing by 0.1 units seats scored then exp(4.15*0.1)= 1.514371
+-> 100*(1.514371-1)=51%, the odds of the probability of choosing WaterTaxi increases b
+y 51%, all else being equal.
+Increasing by 0.1 units seats scored then exp(5.47*0.1)= 1.728061
+-> 100*( 1.728061-1)=72%, the odds of the probability of choosing WaterTaxi increases b y 72%, all else being equal.
+The odds of the probability of choosing WaterTaxi for high educated people increases by e xp(1.1201)=3.065 -> 100*(3.065 -1)= 206% the probability of choosing WaterTaxi in the reference level education-low all else being equal.
+The odds of the probability of choosing WaterTaxi for people that can swim increases by e xp(0.7489)= 2.114-> 100*(2.114 -1)= 111% the probability of choosing WaterTaxi in the reference level of people that cannot swim, all else being equal.
+
+```{r}
+summary(m20)
+exp(coef(m20))
+```
+
+*10. Quina seria la probabilitat esperada d’utilitzar un ‘WaterTaxi’ per a un fabricant de viatges nedadors i d’educació superior quan les variables explicatives numèriques s’estableixen al mínim de mostra?*
+```{r}
+predict(m20,newdata=data.frame(seats=min(df$seats),crowdness=min(df$crowdness),convloc=min(df$convloc),educ="high",swim="swim.No"),type="response",se.fit=T,level=0.95)
+```

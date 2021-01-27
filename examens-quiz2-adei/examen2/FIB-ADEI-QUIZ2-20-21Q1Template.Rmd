@@ -1,0 +1,274 @@
+---
+title: "QUIZ2 ADEI CURS 20-21Q1"
+author: "Júlia Gasull"
+date: "December, 18th 2020"
+output:
+  word_document:
+    toc: yes
+    toc_depth: '3'
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+editor_options:
+  chunk_output_type: console
+---
+# Network KPI
+
+```{r}
+if(!is.null(dev.list())) dev.off(); rm(list = ls())
+```
+
+```{r, include=FALSE, echo=FALSE}
+# Load Required Packages
+options(contrasts=c("contr.treatment","contr.treatment"))
+requiredPackages <- c("missMDA","effects","FactoMineR","car","factoextra","RColorBrewer","ggplot2","dplyr","ggmap","ggthemes","knitr","chemometrics","rpart","ROCR","corrr")
+
+lapply(requiredPackages, require, character.only = TRUE)
+
+setwd("~/Documents/uni/examens-quiz2-adei/examen2")
+load("TRB18DOE-raw.RData")
+summary(kpinet)
+```
+
+
+# Quiz 2 - Questions
+
+## Question 1
+*1.	Variable fuelc contains the total fuel consumption in liters of the selected configuration. Summarize numerically and graphically the response variable. Make an interpretation of the results. Do you think that fuelc may be considered normally distributed?*
+
+* És evident que les dades no es distribueixen normalment, ja que veiem que, primerament, no són simètriques.
+* El 50% de les mostres es troben entre els 14589 i els 17475 litres, ambdós quantils Q1 i Q3. 
+* La mitjana i la mediana no s’acosten, per tant declarem que hi ha asimeteia. 
+* No hi ha valors atípics, ja que els valors mínims i màxims no són valors extrems. 
+* La prova de Shapiro rebutja la nul·la hipòtesi de normalitat.
+
+```{r}
+summary(kpinet$fuelc)
+
+hist(kpinet$fuelc,freq=F,10,col="darkslateblue")
+mm<-mean(kpinet$fuelc);dd<-sd(kpinet$fuelc);mm;dd
+curve(dnorm(x,mm,dd),add=T,col="red",lwd=2)
+lines(density(kpinet$fuelc),add=T,col="cyan",lwd=2,lty=2)
+
+shapiro.test(kpinet$fuelc)
+```
+
+
+## Question 2
+*2.	Which are the variables statistically associated with the target (fuelc)? Indicate the suitable measure of association and/or tests that support your answer.*
+
+Hem de respondre la pregunta mitjançant el mètode condes().
+
+```{r}
+vars <- names(kpinet)[c(1:6,8:17,25)]; vars
+res.con <- condes(kpinet[,vars],which("fuelc"==colnames(kpinet[,vars])))
+```
+
+Les variables numèriques globals i relacionades positivament amb fuelc són co2, nox, ttt.h, ttdis, mflow, densitat, mtt.s.km i mdelay.s.km. mspeed està relacionada inversament. 
+
+```{r}
+res.con$quanti
+```
+
+
+Les variables factorials que s’associen globalment a combustibles de significació alta a baixa són: penetració de la guia (GP), patró de demanda (DP), configuració del controlador (TD) i factor d’interval de finestra de temps (TW).
+
+```{r}
+res.con$quali
+```
+
+Les categories que mostren un efecte additiu positiu sobre la gran mitjana de combustible són: 
+
+* GP de 80, 90 i 100
+* TW de 1.5 min
+* DP de 30% 
+* TD de 60-20-20. 
+
+En el costat negatiu: 
+
+* GP de 0, 10 i 50
+* TW de 3 min
+* TD de 40-50-10 
+* DP de 0% 
+
+```{r}
+res.con$category
+```
+
+
+## Question 3
+
+*3.The average fuelc can be argued to be the same for all Demand Pattern levels (DP)? Which are the groups that show a significant greater average fuelc than the others?.*
+
+Segons la prova no paramètrica de Kruskal sobre els mitjans de combustible segons els nivells de demanda (DP), es pot rebutjar clarament la hipòtesi nul·la de la mitjana uniforme. 
+
+Es mostra en un boxplot per fuelc segons els nivells de demanda (DP) i, a mesura que augmenta la demanda (number of trips), també augmenta el consum total de fuel.
+
+```{r}
+Boxplot(kpinet$fuelc~kpinet$DP,col="darkslateblue")
+kruskal.test(kpinet$fuelc~kpinet$DP)
+```
+
+## Question 4
+
+*4.	Let us perform a one-way analysis of variance on TRB2018 dataset for target fuelc on Demand Pattern (DP) factor using the standard general linear model (lm() method). Assess the explicability of the model and interpret the model for prediction purposes writing the equation for each GP level.*
+
+El model que conté l’efecte brut del Demand Pattern (quantity of trips) explica el 55.13% de la variabilitat total del consum de combustible. 
+
+El consum de fuel (litres) a la demanda base es preveu que serà de 13579,5 litres, ja que la demanda augmenta en viatges de llarga distància un 10, 20 i 30%, el consum mitjà es preveu com (13579.5 + 1905.5 = 15485.0) litres, (13579.5+ 3125.4 = 16704.9) litres i (13579-5 + 4338-6 = 17918.1) litres, respectivament.
+
+```{r}
+model_1 <- lm(
+  fuelc~
+    DP
+  ,data=kpinet
+); summary(model_1)
+
+tapply(kpinet$fuelc,kpinet$DP,mean)
+```
+
+## Question 5
+
+*5.	Use an inferential method to quantify the probability of the null hypothesis of a negligible gross effect for demand pattern (DP) factor.*
+
+Clarament, una prova de Fisher és adequada per provar per calcular el valor de la hipòtesi. El valor P és molt petit (l’estadística de Fisher és de 63.9, molt gran) rebutjant així la hipòtesi nul·la: el patró de demanda (quantity of trips) afecta significativament el consum total de combustible de la network.
+
+```{r}
+model_2 <- lm(
+  fuelc~
+    1
+  ,data=kpinet
+)
+model_3 <- lm(
+  fuelc~
+    DP
+  ,data=kpinet
+)
+
+anova(model_2,model_3)
+```
+
+## Question 6
+
+*6. Let us perform a two-way analysis of variance on TRB2018 dataset for target fuelc on Guidance Penetration (GP) and Demand Pattern (DP) factors using the standard general linear model (lm() method). Are interactions needed for GP and DP to explain the total fuel consumption in the network? Are net effects for both factors significant?*
+
+Segons la producció d'Anova(model_2), els efectes nets d'ambdós factors són significatius. 
+
+De totes maneres, donat que els models additius GP+DP i GP*DP complets estan nested, es pot utilitzar una prova de Fisher per comprovar la necessitat d’interaccions: ja que que el valor de p és inferior a 0,05 llindar normal, ambdós models no són equivalents, per tant les interaccions (el poques que es puguin estimar) contribueixen a explicar el consum total de fuel.
+
+```{r}
+model_4 <- lm(
+  fuelc~
+    GP+DP
+  ,data=kpinet
+)
+model_5 <- lm(
+  fuelc~
+    GP*DP
+  ,data=kpinet
+)
+
+anova(model_4,model_5)
+Anova(model_4)
+```
+
+## Question 7
+
+*7.	Assess the explicability of the BEST model selected in question 6 and calculate the point and 95% confidence prediction interval for fuel consumption for an scenario with a guidance penetration of 80% and demand level of 30%. Try to explain the reason of warning messages appearing for some methods depending on the selected mode.*
+
+El disseny experimental no permet estimar les interaccions entre els factors GP i DP, de manera que no es poden determinar moltes de les variables fictícies. Per als nivells particulars de 80% GP i 20% DP, la predicció puntual és: 13145.04 + 1490.20 + 2529.35 + 1964.15 = 19128.74 litres. 
+
+L’interval de confiança del 95% per al consum total és de [18361.75 19895.72], en litres.
+
+```{r}
+summary(model_5)
+predict(model_5,newdata=data.frame(GP="GP-80",DP="DP-30"))
+predict(model_4,newdata=data.frame(GP="GP-80",DP="DP-30"))
+predict(model_5,newdata=data.frame(GP="GP-80",DP="DP-30"),interval="prediction")
+predict(model_4,newdata=data.frame(GP="GP-80",DP="DP-30"),interval="prediction")
+```
+
+## Question 8
+
+*8. Consider a general linear modeling for total fuel consumption when all numeric variables included in the list of KPIs are taken into account. Assess explicability, try to reduce the number of explanatory variables without loosing too much explicability and discuss colinearity among explanatory variables.*
+
+Les variables explicatives es correlacionen entre elles. 
+
+L’explicabilitat segons el coeficient de determinació és del 99,93%, de manera que explica el 99,93% de la variabilitat total en combustible, però el model no és adequat com es pot veure amb vif(). 
+
+El mètode step(model_6) no ens ajuda a definir un model adequat, ja que no s’elimina cap variable. 
+
+S'ha de proposar un model que contingui 2 o 3 variables no correlacionades.
+
+```{r}
+model_6 <- lm(
+  fuelc~
+    co2+
+    nox+
+    ttt.h+
+    ttdis+
+    mflow+
+    density+
+    mtt.s.km+
+    mdelay.s.km+
+    mspeed
+  ,data=kpinet
+); summary(model_6)
+
+vif(model_6)
+step(model_6)
+
+names(kpinet)
+round(cor(kpinet[,c(15,16,17,10,14,9,8,11,12,13)]),dig=2)
+```
+
+
+## Question 9
+*9. Consider linear models including as explanatory numeric variables total travel distance (ttdis) and mean speed (mspeed) and the main effect for guidance penetration factor. Discuss the model, while justifying the choice (nor residuals  or influent data analysis has to be considered).*
+
+El model especificat explica el 99,5% de la variabilitat del consum de fuel, per tant és aparentment un model molt bo. Tots els efectes nets són significatius i el model no es pot reduir mitjançant el mètode step(model_7). Els vifs són inferiors a 3, de manera que no hi ha problemes de colinearitat.
+
+```{r}
+model_7 <- lm(
+  fuelc~
+    ttdis+
+    mspeed+
+    GP
+  ,data=kpinet
+); summary(model_7)
+
+vif(model_7)
+step(model_7)
+
+Anova(model_7)
+```
+
+
+## Question 10
+*10. Consider the model for fuel consumption proposed in the previous question. Does the model fullfil the properties for linear models? Justify your answer using statistical arguments. Indicate the presence of lack of fit observations and influent data.*
+
+Sembla que es compleix la normalitat i homocedasticitat, però sembla que hi ha un patró sistemàtic en els residus (Residuals vs Fitted) que indica la necessitat d’una transformació no lineal o l’addició d’una nova variable (com es pot veure utilitzant MarginalModelPlots(model_7), els perfils per a configuracions de velocitat baixa indiquen dos grups d'observacions). 
+
+La falta d’ajust és present a l’observació 134 (student residual > 3). El tall 4/(n-p) per a la distància de Cooks és adequat a causa de la petita mida de la mostra: l'observació 134 és la més influent, seguida de 3, 1, 5 i 120.
+
+```{r}
+par(mfrow=c(2,2))
+plot(model_7)
+par(mfrow=c(1,1))
+
+residualPlots(model_7,id.n=5,id.method=cooks.distance(model_7),col="darkslateblue",pch=19)
+marginalModelPlots(model_7,id.n=5,id.method=cooks.distance(model_7),col="darkslateblue",pch=19)
+
+influencePlot(model_7,id.n=5)
+
+Boxplot(rstudent(model_7),col="darkslateblue")  # Lack of fit: outlier in residuals
+kpinet[134,]
+Boxplot(cooks.distance(model_7),col="darkslateblue") 
+abline(h=4/(nrow(kpinet)-length(coef(model_7))),col="red",lwd=2,lty=2)
+```
+
+

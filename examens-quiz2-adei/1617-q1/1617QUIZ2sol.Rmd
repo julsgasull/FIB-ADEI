@@ -1,0 +1,199 @@
+---
+title: "16-17Quiz2"
+author: "Lídia Montero"
+date: "23rd December 2016"
+output: pdf_document
+---
+
+# US Air
+
+*Data from a dataset of air pollution in US cities. Seven variables were recorded for 41 cities:*
+
+  - SO2:  	 Sulphur dioxide content of air in micrograms per cubic meter
+  - NegTemp: 	Average annual temperature less than -1 Fahrenheit degrees
+  - Manuf:	Number of manufacturing enterprises employing 20 or more workers
+  - Pop: 		Population size (1970 census) in thousands
+  - Wind: 		Average annual wind speed in miles per hour
+  - Precip: 	Average annual precipitation in inches
+  - Days: 		Average number of days with precipitation per year.
+
+*Source*
+Everitt, B.S. (2005), An R and S-PLUS Companion to Multivariate Analysis, Springer
+
+*Load usair.RData file  in your current R or RStudio session *
+
+Pop contains the description of thousands of inhabitants for the cities included in the data set. Create a new factor variable consisting on an indicator for small, medium and large cities (named it f.size). Small cities are those with less than half million inhabitants, medium cities are those in the range from half medium to one millium and a half and large cities have a number of inhabitants greater than one million and a half. Our target is defined as SO2. 
+```{r}
+# Set properly the working directory: setwd("xxxx")
+load("usair.RData")
+
+# Point 1 - Quiz1
+usair$f.size<-factor(cut(usair$Pop,breaks=c(0,500,1500,3500)),labels=c("Small","Medium","Large"))
+summary(usair)
+```
+
+**1.	The average SO2 in the cities can be argued to be the same for all city size levels (f.size)? Check the hypothesis by estimating one-way model/s with method lm() and using a suitable inferential tool.**
+
+By visual inspection using a boxplot tool for SO2 - Sulphur dioxide (microg/m3), the average contents and 50% central range of SO2 in air for large cities is clearly greater than the average contents and 50% central ranges for cities in small and medium size groups.
+
+A null model with the constant and a one-way model is calculated using a general linear model method. A null hypothesis stating *H0: m0 = m01 or mu(Small)=mu(Medium)=mu(Large)=mu* is tested using Fisher Test and a pvalue of 0.004 is returned by R. The null H0 is not likely and can be rejected, thus there exists at least a city size group with mean of S02 air contents different from the rest of groups. 
+```{r}
+m0<-lm(SO2~1,data=usair)
+library(car)
+Boxplot(SO2~f.size,data=usair,col=heat.colors(3),pch=19)
+m01<-lm(SO2~f.size,data=usair)
+anova(m0,m01)
+```
+
+**2.	The variance of SO2 in the cities can be argued to be the same for all city size levels (f.size)? Check and discuss residuals after estimating a suitable one-way model with method lm().**
+
+According to diagnostics in Scale-Location plot, also called Spread-Location or 'S-L' plot that takes the square root of the absolute residuals in Y axis across fitted values in X axis, the variance of in large city group is greater than the one in Small and Medium groups. Nevertheless, an outstanding outlier is observed for Providence (Small group). The Breusch-Pagan test for homocedasticity shows a p value greater of 0.41>0.05, thus it can not be rejected and it seems that homocedasticity holds.
+
+```{r}
+par(cex=0.5)
+par(mfrow=c(1,2))
+plot(m01,which=c(1,3),id.n=41,pch=19,col=(as.numeric(usair$f.size)+1))
+par(mfrow=c(1,1))
+library(lmtest)
+bptest(m01)
+```
+
+
+
+**3.	Consider a multiple regression model (m1) for target SO2 on all numeric variables in the dataset. Assess the quality of the model.**
+
+The model explains 67% of the variability of the target SO2 (sulphur dioxide) contents in air. All variables consume 1 degree of freedom, but only Negative Temperature, Manuf and Population have net effects statistically significant according to Fisher tests implemented by method Anova() in library car; Wind, Precip and Days are not significant.
+```{r}
+names(usair)
+m1<-lm(SO2~.,data=usair[,1:7])
+summary(m1)
+Anova(m1)
+```
+
+**4.	Consider model (m1), check significance for all variables. Propose a new reduced model (m2), if non-significance variables are found in (m1). Discuss your proposal.**
+
+According to the AIC criteria searching for a reduced model with a lower Akaike statistic, Days should be removed from (m1) model reducing almost 2 units in AIC from the initial model. Explicability is reduced by 3 points
+
+An statitiscal Fisher Test is applied between the initial (m1) and the reduced (m2) model, they are nested models. The null hypothesis of equivalence from the inferential point of view can not be rejected with a p value of 0.75 >> 0.05. Thus, (m1) and (m2) do the same work, so we also prefer a reduced and simple model (m2). Nevertheless, Minimum AIC and inferential criteria do not match since Precipitation is clearly non-significant (net effect) and Wind is in the borderline, but not significant also.
+
+If BIC criteria is used to monitor the step procedure a model (m2b) is obtained with Population and Manuf. Explicability is reduced by more than 10 points. But, we can not reject Fisher test between (m1) and (m2b), they are equivalence according to inferential rules.
+
+```{r}
+m2<-step(m1) # AIC can be used, there are few observations
+summary(m2)
+anova(m2,m1)
+
+m2b<-step(m1,k=log(nrow(usair)))
+summary(m2b)
+anova(m2b,m1)
+```
+
+**5.	Write the equation for the resulting model (m2).**
+
+Both models show colinearity between Manuf and Pop variables, we have to select manually one of them, the one most related with SO2 target and remove the other from the model, in this case Population is removed. It is convenient to repeat procedure in Point 4. Now, both monitoring criteria for step() lead to the same resulting model (m2), the one including Negative Temperature, Manuf, Wind and Precipitation. A 60% explicability of the target variance is obtained. And the equation of model is:
+
+SO2= 123.11 + 1.61 Neg.Temp + 0.02 Manuf - 3.63 Wind + 0.52 Precip
+
+  - For each unity of increment in Neg.Temp, the SO2 increases by 1.61 unities, all else being equal.   - For each unity of increment in Manuf, the SO2 increases by 0.02 unities, all else being equal.
+  - For each unity of increment in Wind, the SO2 decreases by 3.63 unitites, all else being equal.
+  - For each unity of increment in Precip, the SO2 increases by 052 unitites, all else being equal.
+  
+```{r}
+vif(m2)
+vif(m2b)
+round(cor(usair[,1:7]),dig=2)
+m1<-lm(SO2~.,data=usair[,c(1:3,5:7)])
+m2<-step(m1)
+m2b<-step(m1,k=log(nrow(usair)))
+anova(m2,m1)
+summary(m2)
+```
+
+**6.	Add f.size factor to obtain a new model including interactions with 2 numeric variables in (m2) and write the equation of the resulting model (m3).**
+
+f.size factor has a non-significant net effect according to Fisher test implemented in Anova() for the additive model. Explicability is almost 62% for (m3a) additive. And the equations are parallel and differ in the intercept
+
+For Small group cities: 
+SO2= 124.25 + 1.57 Neg.Temp + 0.031 Manuf - 3.70 Wind + 0.47 Precip
+
+For Medium group cities: 
+SO2= 124.25-5.69 + 1.57 Neg.Temp + 0.031 Manuf - 3.70 Wind + 0.47 Precip
+
+For Large group cities: 
+SO2= 124.25-14.94 + 1.57 Neg.Temp + 0.031 Manuf - 3.70 Wind + 0.47 Precip
+
+Using f.size factor interacting as indicated in the question, one can see that it interactions have  non-significant net effects according to Fisher test implemented in Anova() for the model (I selected interactions with the most rellevant variables according to m2). Explicability is  64% for (m3) . And the equations are not parallel and differ in the intercept and in the slope:
+
+For Small group cities: 
+SO2= 160.47 + 2.13 Neg.Temp + 0.01 Manuf - 4.23 Wind + 0.59 Precip
+
+For Medium group cities: 
+SO2= (160.47 - 63.74) + (2.13-0.88) Neg.Temp + (0.01+0.032) Manuf - 4.23 Wind + 0.59 Precip
+
+For Large group cities: 
+SO2= (160.47 - 203.32) + (2.13+3.50) Neg.Temp + (0.01+0.021) Manuf - 4.23 Wind + 0.59 Precip
+```{r}
+Anova(m2)
+m3a <-lm(SO2 ~ (Neg.Temp + Manuf)+f.size + Wind + Precip,data=usair[,c(1:3,5:8)])
+Anova(m3a)
+summary(m3a)
+# Requested model (m3)
+m3<-lm(SO2 ~ (Neg.Temp + Manuf)*f.size + Wind + Precip,data=usair[,c(1:3,5:8)])
+summary(m3)
+Anova(m3)
+
+```
+
+**7.	Use step() procedure with BIC criteria to simplify (m3) model. Call the new model (m4). Is the new model equivalent to (m3) from an inferential point of view?**
+
+The stepwise procedure based on BIC minimization removes the main effect and interactions with factor f.size. The Fisher Test between the nested models (m3) big and (m4) reduced are equivalent, according to the pvalue 0.76 >> 0.05.
+```{r}
+m4<-step(m3,k=log(nrow(usair)))
+anova(m4,m3)
+```
+
+**8.	Assess default residual plots in R for model (m4): are there any atypical residuals? Which one/s?**
+
+The first plot depicts the raw residuals vs fitted values according to the model, a noise pattern has to be shown for valid models. In this case no patter is present, but some large residuals on the positive Y axis (Providence, Pittsburgh). Normality of the residuals is checked with a QQPlot showing 2 cities that are not on the QQline, again these cities are Providence and Pittsburgh; residuals are too large to follow a normal distribution. On the scale-location plot, the smoother line is not flat, indicating non constant variance, but with 41 observations one has to be cautelous. The last plot on the right-down part shows an atypical city according to its leverage, so far away from the multidimensional cloud of points included in the design matrix, that does not seem relevant because the residual is close to 0.
+
+Atypical residuals appear for Providence and Pittsburgh, so lack of fit for these 2 cities are remarkable: the observed SO2 is much, much greater than the predicted value according to m1 model. Provindece is a small city with observed SO2 of 94 micrograms per cubic meter  while the model predicts 35.98, so a large lack of fit is found for this city.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m4,id.n=5)
+par(mfrow=c(1,1))
+llist<-Boxplot(resid(m4),labels=row.names(usair),col="orange")  # For assessing atypical residuals
+llist
+predict(m1)[llist]
+usair[llist,]
+sort(rstudent(m4),decreasing=T)
+```
+** 9.  For your model (m4), determine the presence of observations with remarkable leverage. Specify city names, selected criteria and behavioral discrepancy.**
+
+
+According to the threshold 2p/n=0.24, Chicago and Phoenix have a large leverage, since Chicago has a low residual it should not become a influent data. Phoenix is not clear.
+```{r}
+
+llist<-Boxplot(hatvalues(m4),labels=row.names(usair),col="orange")  # For assessing atypical leverage observations
+abline(h=2*5/41,col="red",lwd=3)
+llist
+predict(m4)[llist]
+usair[llist,]
+sort(hatvalues(m4),decreasing=T)
+```
+
+**10.	For your final model (m4), determine the presence of actual influent data. Specify city names, selected criteria and behavior.**
+
+Providence and Phoenix are influent data, outliers of Cook's distance and over the threshold defined by Chatterjee-Hadi cut-off equal to 0.11. Providence is an outlier of residuals and Phoenix combines a medium residual with a large leverage, becoming an influent data.
+
+```{r}
+llist<-Boxplot(cooks.distance(m4),labels=row.names(usair),col="orange")  # For assessing atypical leverage observations
+abline(h=4/(41-5),col="red",lwd=3)
+llist
+predict(m4)[llist]
+usair[llist,]
+sort(cooks.distance(m4),decreasing=T)
+influencePlot(m4)
+```
+
+

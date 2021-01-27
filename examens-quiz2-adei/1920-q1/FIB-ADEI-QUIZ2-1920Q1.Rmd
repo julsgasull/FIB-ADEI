@@ -1,0 +1,378 @@
+---
+title: "Q1 ADEI_1920Quiz2"
+author: "Júlia Gasull"
+date: \today
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+
+# First setups
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo = T, results = 'hide'}
+if(!is.null(dev.list())) dev.off()  # Clear plots
+rm(list=ls())                       # Clean workspace
+```
+
+## Load Required Packages for this deliverable
+We load the necessary packages and set working directory
+```{r echo = T, results = 'hide', message=FALSE, error=FALSE, warning=FALSE}
+setwd("~/Documents/uni/FIB-ADEI/exams/Course 2019-20 Q1 Datasets for Quiz 1 and 2-20201217")
+filepath<-"~/Documents/uni/FIB-ADEI/exams/Course 2019-20 Q1 Datasets for Quiz 1 and 2-20201217"
+
+# Load Required Packages
+options(contrasts=c("contr.treatment","contr.treatment"))
+requiredPackages <- c("missMDA","chemometrics","mvoutlier","effects","FactoMineR","car","lmtest","ggplot2","moments","factoextra","RColorBrewer","dplyr","ggmap","ggthemes","knitr")
+
+missingPackages <- requiredPackages[!(requiredPackages %in% installed.packages()[,"Package"])]
+if(length(missingPackages)) install.packages(missingPackages)
+lapply(requiredPackages, require, character.only = TRUE)
+```
+
+## Load processed data from last deliverable
+```{r}
+load(paste0(filepath,"/01-Airfare-raw.RData"))
+names(air)
+summary(air)
+```
+
+
+## Refactor
+```{r}
+names(air)
+names(air)[names(air) == "year"] <- "q.year"
+names(air)[names(air) == "origin"] <- "qual.origin"
+names(air)[names(air) == "destin"] <- "qual.destin"
+names(air)[names(air) == "id"] <- "q.id"
+names(air)[names(air) == "dist"] <- "q.dist"
+names(air)[names(air) == "passen"] <- "q.passen"
+names(air)[names(air) == "fare"] <- "q.fare"
+names(air)[names(air) == "bmktshr"] <- "q.bmktshr"
+names(air)[names(air) == "ldist"] <- "q.ldist"
+names(air)[names(air) == "y98"] <- "q.y98"
+names(air)[names(air) == "y99"] <- "q.y99"
+names(air)[names(air) == "y00"] <- "q.y00"
+names(air)[names(air) == "lfare"] <- "q.lfare"
+names(air)[names(air) == "ldistsq"] <- "q.ldistsq"
+names(air)[names(air) == "concen"] <- "q.concen"
+names(air)[names(air) == "lpassen"] <- "q.lpassen"
+names(air)
+```
+
+# Llista de preguntes
+
+El conjunt de dades per realitzar aquest exercici pertany al lloc web stata (http://www.stata.com/texts/eacsap/), hi ha 4596 observacions individuals de tarifes aèries dels EUA documentades per Jeffrey M. Wooldridge, 2000 "Airfare" Instructional Conjunts de dades Stata per a econometria”, Boston College Department of Economics. 
+
+El fitxer conté el preu pagat pels passatgers pels vols interns de 48 estats dels EUA entre 1997 i 2000. 
+
+* La variable de resposta original és la tarifa. 
+* La variable explicativa clau és la quota de mercat de l’empresa majoritària (bmktshr o concen), la distància també s’ha d’incloure en el model i la demanda diària (passen). 
+
+Només heu de treballar en aquest exercici amb les dades de l'any 2000. Llista de variables:
+
+  - year:	1997, 1998, 1999, 2000
+  - origin:	flight's origin
+  - destin: flight's destination
+  - id:	route identifier
+  - dist:	distance, in miles
+  - passen:	avg. passengers per day
+  - fare:	avg. one-way fare, $
+  - bmktshr/concen:	fraction market, biggest carrier
+  - Some additional variables not rellevant for the exercise
+
+**En primer lloc, carregueu el conjunt de dades, seleccioneu la submostra i comproveu les variables disponibles.**
+```{r}
+table(air$q.y00)
+sel <- which(air$q.y00 == 1); length(sel)
+df <- air[sel,]
+names(df)
+summary(df)
+```
+
+## 1. Determineu si la variable de resposta (fare) té una distribució normalment acceptable.
+
+### Manera 1: per percentils
+```{r}
+summary(df$q.fare)
+seq(0,1,0.1)
+quantile(df$q.fare,seq(0,1,0.1))
+```
+
+L'output numèric indica una Median (178.0) inferior a la Mean de la tarifa (188), de manera que hi ha assimetria, cosa que no és el cas de les dades normals. 
+
+### Manera 2: per gràfiques
+```{r}
+hist(df$q.fare,20,freq=F,col="darkslateblue",main="Histograma Tarifa - Relativo",border = "darkslateblue")
+mm<-mean(df$q.fare);ss<-sd(df$q.fare)
+curve(dnorm(x,mean=mm,sd=ss),col="red",lwd=2,lty=3, add=T)
+```
+
+La sortida gràfica mostra alguns ajustaments erronis a la corba normal. 
+
+### Manera 3: test shapiro-wilk
+```{r}
+shapiro.test(df$q.fare)  # H0 Rejected (p value << 0.05)
+```
+
+A més, la prova de normalitat de Shapiro-Wilk mostra un valor < 2,2e-16 inferior al límit d’acceptació comú (0,05), per la qual cosa s’ha de rebutjar la normalitat.
+
+### Conclusió
+Tots els arguments apunten contra la normalitat de les dades tarifàries.
+
+
+
+## 2. Feu una avaluació aproximada de les estadístiques descriptives de les variables tarifa (fare), la quota de mercat de l’operador més gran (bmktshr), la distància (dist) i el nombre de passatgers diaris (passen). Indiqueu explorant les dades que són aparentment les variables més associades a la variable de resposta (utilitzeu només les variables indicades).
+
+
+```{r}
+summary(df$q.fare)
+boxplot(df$q.fare,main="fare")
+```
+
+La tarifa oscil·la entre 62 i 522, amb un valor Mean de 188 i un valor Median de 178. El 50% de les observacions es troben entre 132 i 233. 
+
+??? Distribució de cua dreta que mostra valors atípics. El llindar per a valors atípics greus és de 233 + 3 * 101 = 536 $, per tant, supera el màxim de la mostra.
+
+
+```{r}
+summary(df$q.dist)
+boxplot(df$q.dist,main="distance")
+```
+
+La distància oscil·la entre els 95 i els 2724 km, amb un valor Mean de 989 km i un valor Median de 861 km. El 50% de les observacions es troben entre els 505 i els 1304 km. 
+
+??? Distribució de cua dreta que mostra valors atípics suaus.
+
+```{r}
+summary(df$q.bmktshr*100)
+boxplot(df$q.bmktshr*100,main="market share")
+```
+
+La quota de mercat oscil·la entre el 18% i el 100%, amb un valor Mean del 60% i un valor Median del 59%. El 50% de les observacions es troben entre el 46% i el 74%. No hi ha valors atípics i la distribució de dades és simètrica.
+
+```{r}
+summary(df$q.passen)
+boxplot(df$q.passen,main="passenger")
+```
+
+Els viatgers al dia oscil·len entre 2 i 8497 persones, amb un valor Mean de 671 persones i un valor Median de 378 persones. El 50% de les observacions es troben entre 238 i 759. 
+
+??? Distribució de cua dreta que mostra molts valors atípics, però només els vols superiors a 759 + 3 * 521 = 2322 pax per dia són valors atípics greus i, per tant, dades inusuals.
+
+
+```{r}
+plot(df[,c(7,5:6,8)])
+```
+
+Relació directament proporcional entre q.fare i q.ddist.
+
+```{r}
+cor(df[,c(7,5:6,8)],method="spearman") #spearman perquè target no normal
+```
+
+Veiem que les variables que més poden afectar a la tarifa, per ordre, són: q.dist, q.passen i q.bmktshr.
+
+
+## 3. Definiu un factor politòmic f.concen per a la covariable de la quota de mercat de l’operador principal (concen) segons els seus quartils i argumenteu si la taxa mitjana depèn del nivell de concentració del camí. Justifiqueu estadísticament la resposta.
+
+## Factor
+```{r}
+df$f.concen<-cut(df$q.concen,breaks=quantile(df$q.concen),include.lowest=T)
+summary(df$f.concen)
+```
+
+## Argumentació - fare depèn de concen del camí?
+```{r}
+library(car)
+Boxplot(
+  df$q.fare~
+    df$f.concen,
+  col='darkslateblue'
+)
+```
+
+Els gràfics de tarifa en grups mostren lleugeres diferències en les mitjanes, més notables en l’interval interquartilar. Tots els grups de concentració destaquen els valors atípics de la tarifa. 
+
+
+### Kruskal
+
+```{r}
+# kruskal.test(
+#   df$q.fare~
+#     df$f.concen
+# )
+```
+
+Segons la prova no paramètrica de Kruskal-Wallis, la distribució de la tarifa entre grups de concentració no es pot considerar homogènia, ja que H0 és rebutjat (3.436e-08).
+
+### Condes
+```{r}
+summary(df)
+res.con<-condes(df,7)
+res.con$quanti
+res.con$category
+```
+
+Quanti:
+* q.concen: -0.1877193, 1.424279e-10
+
+Category:
+* f.concen=[0.18,0.456]: 19.715883 4.410547e-07
+* f.concen=(0.738,1]: -19.041183 1.099371e-06
+
+Sembla que hi ha valors del concen que apunten a diferències en les tarifes.
+
+
+## 4. 
+
+## Calculeu el model de regressió lineal que explica la tarifa des de la distància del recorregut: interpreteu la línia de regressió i avalueu-ne la qualitat. Quin és el percentatge de variabilitat de la fare que s’explica per la longitud de la ruta aèria? 
+```{r}
+model_1 <- lm(q.fare~q.dist,data=df)
+summary(model_1)
+0.3592*100
+```
+
+El model m1 no és bo, ja que només explica el 35,92% de la variabilitat de l'objectiu.
+
+```{r}
+scatterplot(q.fare~q.dist,data=df,smooth=F)
+```
+
+Segons la taula per defecte amb proves de coeficient nul, dist és una variable significativa. 
+
+???? L’equació del model és tarifa = 113,5 + 0,0752dist. 
+
+La producció del diagrama de dispersió mostra que un patró creixent de la tarifa es manté quan la distància augmenta. 
+
+## Creieu que cal introduir un terme quadràtic en l'equació que relacioni la tarifa amb la longitud de la ruta aèria?
+
+```{r}
+model_2<-lm(q.fare~poly(q.dist,2),data=df)
+summary(model_2)
+```
+
+Afegir un terme quadràtic amb prou feines millora el model en un 0,3% d’explicabilitat, tot i que el paràmetre del terme de segon ordre és significativament diferent de 0 (per tant, útil) al nivell de confiança del 5%, però s’acceptaria al nivell de confiança de l’1%.
+
+## 5. Feu una transformació adequada per a l'objectiu i la longitud de la ruta aèria. Després de controlar la longitud del recorregut, indiqueu si l’efecte additiu del factor monopoli a la ruta és estadísticament significatiu.
+
+```{r}
+library(MASS)
+boxcox(q.fare~q.dist,data=df)
+
+
+model_3<-lm(sqrt(q.fare)~sqrt(q.dist),data=df); summary(model_3)
+scatterplot(sqrt(q.fare)~sqrt(q.dist),data=df,smooth=T)
+
+scatterplot(log(q.fare)~log(q.dist),data=df,smooth=F)
+
+model_4<-lm(sqrt(q.fare)~sqrt(q.dist)+f.concen,data=df)
+summary(model_4)
+Anova(model_4)
+```
+
+Es pot investigar una transformació logarítmica per a ambdues variables. No obstant això, el mètode Box-Cox a la biblioteca MASS no inclou la transformació de potència 0 (logaritme) i suggereix una arrel quadrada per a l'objectiu i la variable explicativa. Les dues solucions s’han considerat correctes. 
+
+Utilitzant transformacions d’arrel quadrada, el coeficient de determinació per al model lineal simple és del 35%. 
+
+Afegir el factor f.concen millora en un 1% d’explicabilitat del model. 
+
+Per respondre adequadament a la pregunta s’hauria d’abordar una prova d’efecte net per a f.concen: H0 'un cop sqrt (dist) ja sigui al model, no s’hi val afegir f.concen ’. 
+
+H0 is rejected and thus f.concen additive net-effect is meaningful.
+
+## 6. Indiqueu si la relació entre la tarifa aèria i la durada de la ruta depèn del factor de monopoli de la ruta. Calculeu els models implicats, feu les proves d’hipòtesi adequades i interpreteu-les estadísticament.
+
+```{r}
+scatterplot(sqrt(q.fare)~sqrt(q.dist)|f.concen,data=df,smooth=F)
+model_5<-lm(sqrt(q.fare)~sqrt(q.dist)*f.concen,data=df)
+summary(model_5)
+anova(model_4,model_5)
+Anova(model_5) # s'hagi de rebutjar la hipòtesi nul·la (pval = 0,0007224 << 0,05 )
+```
+
+La pregunta fa referència a la necessitat d’interaccions entre els nivells de f.concen i la variable explicativa sqrt(q.dist). 
+L'explicabilitat del model m5 no millora de manera espectacular, però utilitzant un Fisher (o directament, Anova (m5)) per provar la necessitat d'interacció, pot semblar que al nivell de confiança comú s'hagi de rebutjar la hipòtesi nul·la (pval = 0,0007224 << 0,05 ), per tant, **es necessiten interaccions**.
+
+## 7. Seleccioneu el millor model disponible fins ara. Interpretar les equacions que relacionen les variables explicatives amb la resposta (tarifa). Valoreu gràficament el millor model obtingut fins ara. Avalueu la presència de valors atípics en els residus estudiats a un nivell de confiança del 99%. Indiqueu quines són aquestes observacions.
+
+```{r}
+par(mfrow=c(2,2))
+plot(model_5,id.n=0)
+par(mfrow=c(1,1))
+
+ll<-which(abs(rstudent(model_5))>qnorm(0.995))
+df[ll,]
+```
+
+El millor model és m5. 
+
+La interpretació significa escriure les equacions:
+```{r}
+# Coefficients:
+#                                     Estimate Std. Error t value Pr(>|t|)    
+# (Intercept)                         8.250322   0.516573  15.971  < 2e-16 ***
+# sqrt(q.dist)                        0.163880   0.013772  11.900  < 2e-16 ***
+# f.concen(0.456,0.587]              -0.472592   0.711505  -0.664 0.506687    
+# f.concen(0.587,0.738]              -1.815195   0.681683  -2.663 0.007858 ** 
+# f.concen(0.738,1]                   0.796818   0.711851   1.119 0.263222    
+# sqrt(q.dist):f.concen(0.456,0.587]  0.019885   0.020608   0.965 0.334794    
+# sqrt(q.dist):f.concen(0.587,0.738]  0.073072   0.020007   3.652 0.000272 ***
+# sqrt(q.dist):f.concen(0.738,1]     -0.008044   0.024381  -0.330 0.741500    
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+```
+
+* (ref level) sqrt(fare)=(8.25+0)+(0.164+0)sqrt(dist) = 8.25 + 0.164 sqrt(dist) 
+* ((0.456,0.587] level) sqrt(fare)=(8.25-0.472592)+(0.164+0.019885)sqrt(dist)=  7.78 +0.18 sqrt(dist)
+* ((0.587,0.738] level) sqrt(fare)=(8.25-1.815195)+(0.164+0.073072)sqrt(dist)= 6.44 + 0.24 sqrt(dist)
+* ((0.738,1] level) sqrt(fare)=(8.25+0.796818)+(0.164-0.008044)sqrt(dist)=  9.05 + 0.16 sqrt(dist)
+
+[normal q-q] La normalitat dels residus no es manté, ja que les cues estan separades de la distribució teòrica. Els extrems no hi són, però apareix un patró clar: el valor dels residus negatius té un valor absolut inferior a la variabilitat residual positiva. 
+
+[scale-location] Sembla que es manté l’homocedasticitat. Hi ha observacions inusuals (gran palanquejament).
+
+[residuals vs leverage] Els residus estudiantilitzats tenen una distribució t-Student, però, per a mostres grans com aquesta, es pot utilitzar una aproximació normal per determinar el límit inferior i superior dels residus estudiats a un nivell bilateral de l’1%; [-2.576,2.576] són acceptables i per a aquells fora d’aquests límits es detecta un inadaptat. 
+
+Els vols a Atlanta - Charlotte i Philadelphia-Richmond són curts i poc exigents. Els valors atípics són 188, 1472, 2032 i 4100 segons els criteris sol·licitats.
+
+
+## 8. Estudieu la presència d’observacions de dades influents a priori, indicant-ne el nombre segons els criteris estudiats a classe.
+
+```{r}
+influencePlot(model_5,id=list(method="noteworthy",n=3))
+3*mean(hatvalues(model_5))
+llhii<-which(hatvalues(model_5)>3*mean(hatvalues(model_5)));length(llhii)
+```
+
+Les observacions potencials influents són aquelles amb un palanquejament superior a tres vegades el palanquejament mitjà (o 3p/n).
+
+Hi ha 21 observacions que compleixen aquest criteri, però només 3 són remarcables: 1532, 1536 i 4108. 
+
+Cap d’elles té un gran residu, de manera que no són perilloses.
+
+## 9. Estudieu la presència de valors influents a posteriori, indicant els criteris estudiats a classe i les observacions atípiques reals.
+
+```{r}
+Boxplot(cooks.distance(model_5))
+thrch <- 4/(nrow(df)-length(coef(model_5)));thrch
+ll1<-c(508); df[ll1,]
+```
+
+La distància de Boxplotting Cook mostra un vol Dallas-San José (1438 km, 444 $ i 750 pax) com a únic valor atípic sever i està confirmat per influencePlot (), ja que combina falta d’ajust (2,83 i gran apalancament 0,021).
+
+## 10. Tenint en compte un vol d’una distància de 300 km, amb una mitjana diària de 1.000 passatgers/dia i l’existència del comportament més monopolista del servei, quina seria la tarifa esperada amb un interval de confiança del 95%?
+
+```{r}
+summary(model_5)
+predict(model_5,newdata=data.frame(q.dist=300,f.concen="(0.738,1]"),interval= "prediction")^2
+```
+
+Segons el model m5 i tenint en compte que el mètode predictiu retorna prediccions a l’escala d’arrel quadrada, l’estimació del punt tarifari seria de 138 $ i la predicció d’un interval de confiança del 95% seria de 55 a 258 dòlars.
