@@ -1,0 +1,323 @@
+---
+title: "ExamFIB-ADEI-Quiz1_19-20Q2"
+author: "Júlia Gasull"
+date: \today
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 1: All questions account for 1 point
+
+25 personality self-report items taken from the International Personality Item Pool (ipip.ori.org) were included as part of the Synthetic Aperture Personality Assessment (SAPA) web based personality assessment project (SAPA https://sapa-project.org). The data from 2800 subjects are included here. Three additional demographic variables (sex, education, and age) are also included. The first 25 items are organized by five putative factors: Agreeableness, Conscientiousness, Extraversion, Neuroticism, and Openness. The item data were collected using a 6 point response scale: 1 Very Inaccurate 2 Moderately Inaccurate 3 Slightly Inaccurate 4 Slightly Accurate 5 Moderately Accurate 6 Very Accurate. The items given were sampled from the International Personality Item Pool of Lewis Goldberg using the sampling technique of SAPA. This is a sample data set taken from the much larger SAPA data bank.
+
+Name	Description
+* A1	I Am indifferent to the feelings of others. (q_146)
+* A2	Inquire about others' well-being. (q_1162)
+* A3	Know how to comfort others. (q_1206)
+* A4	Love children. (q_1364)
+* A5	Make people feel at ease. (q_1419)
+* C1	Am exacting in my work. (q_124)
+* C2	Continue until everything is perfect. (q_530)
+* C3	Do things according to a plan. (q_619)
+* C4	Do things in a half-way manner. (q_626)
+* C5	Waste my time. (q_1949)
+* E1	Don't talk a lot. (q_712)
+* E2	Find it difficult to approach others. (q_901)
+* E3	Know how to captivate people. (q_1205)
+* E4	Make friends easily. (q_1410)
+* E5	Take charge. (q_1768)
+* N1	Get angry easily. (q_952)
+* N2	Get irritated easily. (q_974)
+* N3	Have frequent mood swings. (q_1099
+* N4	Often feel blue. (q_1479)
+* N5	Panic easily. (q_1505)
+* O1	Am full of ideas. (q_128)
+* O2	Avoid difficult reading material.(q_316)
+* O3	Carry the conversation to a higher level. (q_492)
+* O4	Spend time reflecting on things. (q_1738)
+* O5	Will not probe deeply into a subject. (q_1964)
+* gender	gender Males = 1, Females =2
+* education	1 = HS, 2 = finished HS, 3 = some college, 4 = college graduate 5 = graduate degree
+* age	age in years
+
+
+**Firstly, load dataset and check available variables.**
+
+```{r}
+rm(list=ls())
+setwd("~/Documents/uni/FIB-ADEI/exams")
+load("~/Documents/uni/FIB-ADEI/exams/bfi_Raw.RData")
+summary(df)
+```
+
+# Load Required Packages for this deliverable
+We load the necessary packages and set working directory
+```{r echo = T, results = 'hide', message=FALSE, error=FALSE, warning=FALSE}
+# Load Required Packages
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("missMDA","chemometrics","mvoutlier","effects","FactoMineR","car", "factoextra","RColorBrewer","dplyr","ggmap","ggthemes","knitr")
+missingPackages <- requiredPackages[!(requiredPackages %in% installed.packages()[,"Package"])]
+
+if(length(missingPackages)) install.packages(missingPackages)
+lapply(requiredPackages, require, character.only = TRUE)
+```
+
+## Some useful functions
+```{r}
+calcQ <- function(x) { # Function to calculate the different quartiles
+  s.x <- summary(x)
+  iqr<-s.x[5]-s.x[2]
+  list(souti=s.x[2]-3*iqr, mouti=s.x[2]-1.5*iqr, min=s.x[1], q1=s.x[2], q2=s.x[3], 
+       q3=s.x[5], max=s.x[6], mouts=s.x[5]+1.5*iqr, souts=s.x[5]+3*iqr ) 
+}
+
+countNA <- function(x) { # Function to count the NA values
+  mis_x <- NULL
+  for (j in 1:ncol(x)) {mis_x[j] <- sum(is.na(x[,j])) }
+  mis_x <- as.data.frame(mis_x)
+  rownames(mis_x) <- names(x)
+  mis_i <- rep(0,nrow(x))
+  for (j in 1:ncol(x)) {mis_i <- mis_i + as.numeric(is.na(x[,j])) }
+  list(mis_col=mis_x,mis_ind=mis_i) 
+}
+
+countX <- function(x,X) { # Function to count a specific number of appearences
+  n_x <- NULL
+  for (j in 1:ncol(x)) {n_x[j] <- sum(x[,j]==X) }
+  n_x <- as.data.frame(n_x)
+  rownames(n_x) <- names(x)
+  nx_i <- rep(0,nrow(x))
+  for (j in 1:ncol(x)) {nx_i <- nx_i + as.numeric(x[,j]==X) }
+  list(nx_col=n_x,nx_ind=nx_i) 
+}
+```
+
+**1. Define a binary factor for gender f.gender and a polytomic factor for education f.educ. Justify with R commands for the procedure and your answer. Calculate thresholds to identify severe outliers for the age variable (age).**
+
+* El gènere i l’educació es defineixen com a factors. 
+
+Binary factor for gender f.gender
+```{r}
+df$f.gender <- factor(df$gender, labels=(c("sex.male","sex.famale")))
+summary(df$gender)
+summary(df$f.gender)
+```
+
+Polytomic factor for education f.educ
+```{r}
+ll<-which(is.na(df$education))
+df$education[ll]<-6
+df$f.educ <- factor(df$education, labels=c("hs", "finished hs", "some college", "college graduate", "graduate degree", "unknown"))
+summary(df$education)
+summary(df$f.educ) # --> we have NAs
+```
+* Es pot veure que a l'educació amb 223 missings.  La imputació no és una solució raonable i cal definir un nivell específic desconegut. 
+
+Outliers for age
+```{r}
+summary(df$age)
+Boxplot(df$age)
+var_out<-calcQ(df$age)
+abline(h=var_out$souts,col="red")
+abline(h=var_out$souti,col="red")
+llout<-which((df$age>80))
+llout
+# sumres<-summary(df$age)
+# iqr<-as.numeric(sumres[5]-sumres[2]);iqr
+# mildlow<-as.numeric(sumres[2]-1.5*iqr)
+# mildup<-as.numeric(sumres[5]+1.5*iqr)
+# sevlow<-as.numeric(sumres[2]-3*iqr)
+# sevup<-as.numeric(sumres[5]+3*iqr)
+# mildlow;mildup
+# sevlow;sevup
+# ll<-which(df$age>sevup);length(ll);ll
+```
+
+* L’edat és una variable numèrica sense missings. 
+* El càlcul dels llindars atípics greus determina que aquelles observacions superiors a 80 són atípics greus: només 1 persona compleix aquesta condició (obs. 1158). 
+* El llindar greu inferior no té sentit (ja que és -25). 
+
+**2.	Conduct a suitable data imputation procedure to remove missing data included in dataset for numeric variables. Check imputation consistency for numeric variables.**
+
+```{r}
+library(missMDA)
+summary(df)
+names(df)
+
+vars_quantitatives<-names(df)[c(1:25)]
+res.imputation<-imputePCA(df[,vars_quantitatives],ncp=5)
+dfimpu<-as.data.frame(res.imputation$completeObs)
+summary(res.imputation$completeObs)
+```
+
+Checking imputation consistency
+```{r}
+library(car)
+Boxplot(df[,vars_quantitatives])
+Boxplot(dfimpu[,vars_quantitatives])
+lapply(df[,vars_quantitatives],quantile, probs=seq(0,1,0.1),na.rm=T)
+lapply(dfimpu[,vars_quantitatives],quantile, probs=seq(0,1,0.1),na.rm=T)
+
+df[,vars_quantitatives]<-res.imputation$completeObs[,vars_quantitatives]
+```
+
+* Les 25 primeres variables tenen missings, entre 9 i 36, excepte la variable O2. 
+* El mètode imputePCA () del paquet missMDA s'ha d'utilitzar per a la imputació de variables numèriques. 
+* Cal comprovar si hi ha valors d’imputació raonables mitjançant gràfics o quantils. 
+* Sembla que no hi ha cap problema.
+
+**3.	Conduct a suitable data imputation procedure for factors. Summarize imputation results for f.education factor.**
+
+```{r}
+library(missMDA)
+summary(df)
+names(df)
+
+vars_categorical<-names(df)[c(29:30)]
+summary(df[,vars_categorical])
+# res.input<-imputeMCA(df[,vars_categorical],ncp=2)
+# summary(res.input$completeObs)
+```
+
+* La imputació de factors hauria d'utilitzar les dades f.educ i f.gender, de manera que no és probable que continguin prou informació per a una imputació adequada. 
+* Si s'hagués inclòs un conjunt de factors al conjunt de dades, aleshores s'hauria d'utilitzar imputeMCA() al paquet missMDA amb finalitats d'imputació. 
+* De fet, els valors que falten de l'educació variable s'han de seleccionar per definir un nou nivell en el factor f.educ etiquetat com a "Desconegut". 
+* Hi ha 223 observacions amb un nivell d'educació desconegut.
+
+
+**4.	Can the average of age can be argued to be the same for all education levels (f.educ) and gender (f.gender)? Which are the groups that show significant greater values than the others? Use graphic, numeric and inferential tools.**
+
+Profiling of age -> f.educ and f.gender
+```{r}
+Boxplot(df$age~df$f.gender,main="Age by Gender")
+Boxplot(df$age~df$f.educ,main="Age by Education Level")
+
+names(df)
+vars_res<-names(df)[c(28)]
+res.condes <- condes(df[, c(vars_res,vars_quantitatives, vars_categorical)],1)
+
+res.condes$quali
+res.condes$category
+```
+
+* Gràfics: boxplot d'edat per a f.gender és difícil d'avaluar, però boxplot per a cada nivell de f.educ mostra un perfil diferent clar per edat en funció dels nivells. 
+
+* Es pot utilitzar un mètode condes() per a una resposta ràpida: 
+  + $quali mostra la importància global de f.educ i f.gender. 
+  + També mostra que els estudis de postgrau, universitaris, HS acabats i les edats mitjanes femenines superen la mitjana i els homes, HS, algunes universitats i desconegudes estan significativament per sota de la mitjana global d’edat.
+
+**5.	Let us assume that education (f.educ) is the target variable. Use a suitable feature selection and profiling tool to discuss global association between target and numerical variables/factors in dataset.**
+
+```{r}
+names(df)
+vars_res<-names(df)[c(30)]
+res.catdes <- catdes(df[, c(vars_res,vars_quantitatives, vars_categorical)], 1)
+res.catdes$quanti.var
+```
+
+Associat globalment a f.educ és el factor f.gender. f.educ s’associa globalment a l’edat de les variables numèriques i a 24 ítems més, sent les A4, A1, C4, C5 i O3 més significatives.
+
+**6. Profile HS education group according to available data in your dataset. **
+
+```{r}
+res.catdes$category["hs"]
+res.catdes$quanti["hs"]
+```
+
+Els homes estan sobrerepresentats en el nivell HS (41,5% del grup HS vs 32,82% a nivell mundial, més del 10% dels homes inclosos a la mostra pertanyen al grup HS), mentre que estan subrepresentats en grups "d'alguns col·legis". En concret, les variables numèriques les mitjanes de les quals són significativament diferents de la mitjana global per a cada nivell f.educ són:
+
+* Per als nivells "HS" C4 i A1 superen la mitjana global, mentre que l'edat E5 i C3 estan per sota de la mitjana global. Aquesta és la resposta directa a la pregunta.
+* Per a l'edat del nivell "HS acabat" i A1 superen la mitjana global.
+
+**7.	A Normalized Principal Component Analysis is addressed using as supplementary variables gender, education and age. How many axes do you have to retain according to Kaiser criteria? What’s the inertia explained by retained Kaiser-based principal components?.**
+
+```{r}
+names(df)
+res.pca <- PCA(df[, c(1:25, 28:30)], quanti.sup=26, quali.sup=27:28)
+summary(res.pca,nbind=0,nbelements = 25)
+
+fviz_screeplot(
+  res.pca, 
+  barfill = "darkslateblue",
+  barcolor = "darkslateblue",
+  linecolor = "red",
+  ggtheme = theme_gray())
+```
+Seguint estrictament els criteris de Kaiser, hem de conservar tants eixos com valors propis superiors a 1,0 (valor mitjà del valor propi). 6 eixos compleixen la condició i expliquen el 57,25% de la inèrcia total.
+
+
+**8.	Try to explain the meaning of the axes in the first factorial plane. Which 3 variables have the greatest correlation with each factor in the first factorial plane?.**
+
+```{r}
+summary(res.pca,nb.dec=2,nbind=0,nbelements = 25,ncp=2)
+ddd<-dimdesc(res.pca,axes=1:2)
+ddd$Dim.1
+ddd$Dim.2
+```
+
+Eix 1:
+* És difícil resumir-lo, però la correlació positiva amb l’eix 1 és 
+  + E4 - Make friends easily.
+  + A5 - Make people feel at ease.
+* i negativa correlacionada amb 
+  * E2 - Find it difficult to approach others
+  * N4 - Often feel blue.
+
+Eix 2:
+* Per a l'eix 2, apareix una correlació positiva per a 
+  + N3 - Have frequent mood swings. 
+  + N2 - Get irritated easily. 
+  + N1 - Get angry easily. 
+* s'associa inversament a 
+  + E1 - Don't talk a lot.
+
+
+**9. A Non-normalized Principal Component Analysis is addressed using as supplementary variables gender, education and age. How many axes do you have to retain according to Kaiser criteria? What’s the inertia explained by retained Kaiser-based principal components?**
+
+```{r}
+names(df)
+res.pcann <- PCA(df[, c(1:25, 28:30)], quanti.sup=26, quali.sup=27:28, scale.unit=FALSE)
+summary(res.pcann,nb.dec=2,nbind=0,ncp=2,nbelements = 25)
+mean(res.pcann$eig[,1])
+```
+
+* Seguint estrictament els criteris de Kaiser, hem de conservar tants eixos com a valors propis superiors a la mitjana (> mean(res.pcann$eig[,1]) [1] 1.996997). 
+* 6 dimensions compleixen la condició i expliquen el 58.61% de la inèrcia total
+
+**10.	A Hierarchical Clustering is addressed. A non-default criteria for selecting the number of clusters to 3 has to be set. Explain the characteristics of cluster number 1.**
+
+```{r}
+# 6 dimensions have to be selected according to Kaiser's criteria
+res.pca <- PCA(df[, c(1:25, 28:30)], quanti.sup=26, quali.sup=27:28, ncp=6)
+res.hcpc <- HCPC(res.pca,nb.clust=3, graph=T)
+res.hcpc$desc.var
+(res.hcpc$call$t$within[1]-res.hcpc$call$t$within[3])/res.hcpc$call$t$within[1] # representació de la inèrcia
+```
+
+Es seleccionen tres clústers que són suficients per representar la complexitat d’aquest conjunt de dades.
+
+* Clúster 1:
+  + E2 - Find it difficult to approach others.
+  + E1 - Don't talk a lot.
+  + C5 - Waste my time
+  + C4 - Do things in a half-way manner.
+
+* Clúster 2:
+  + N3 - Have frequent mood swings.
+  + N1 - Get angry easily.
+  + N2 - Get irritated easily.
+  + N5 - Panic easily.
+
+* Clúster 3:
+  + A5 - Make people feel at ease. 
+  + E4 - Make friends easily. 
+  + A2 - Inquire about others' well-being.
+  + O3 - Carry the conversation to a higher level.
