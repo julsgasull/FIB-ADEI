@@ -1,0 +1,326 @@
+---
+title: "QUIZ1 ADEI_20-21Q1: Template for solutions to questions"
+author: "Júlia Gasull"
+date: "November 10th, 2020"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# List of Questions
+
+The data set for this exercise contains 396 observations for the mean daily values of the variables included in the table referred to a wastewater treatment plant. The plant has measures on the quality of the wastewater at the entrance of the plant, they are the variables xxx.e, from here they go to a first decantation process (Primary Treatment) where it is intended that they settle the solids in suspensions. Then it goes into the Biological Reactor. This is the most critical part. Here is a biological mud that literally "lives by eating organic matter." It is activated by temperature and aeration. This process is carried out by many species of microorganisms. These microorganisms work at different temperatures. If they are not balanced with the composition of the water, they eat each other. The control variables are those that graduate aeration, temperature, recirculation and purge of the bioreactor. This is the most difficult part: if things go well, dirty water and biological mud enter the bioreactor and end up with clean water and colonies of microorganisms that have consumed the organic matter. Then the water goes through a second decanting process where the microorganisms settle because if the water is not aerated they fall to the ground. And then clean can be poured into the river. The purified water, at the end of the process, before being poured into the river must have neither DBO, nor DQO, nor SS nor SSV, absolute zeros are impossible and therefore the current legislation has permissible limits that are not dangerous for the life in rivers. Available variables:
+
+  -   date	id from 1 to number of observations
+  -   dateformated	dd-mm-yy
+  -   datenorm	dd/mm/yyyy
+  -   q.e	Input Flow
+  -   qb.b	Flow after biological reactor
+  -   qr.g	Recirculation Flow 
+  -   qp.g	Purge Flow 
+  -   qa.g	Air inflow 
+  -   fe.e	Iron pretreatment
+  -   ph.e	Hydrogen potential 
+  -   ss.e	Input Solid in Suspension 
+  -   ssv.e	Input Suspended Volatile Solids 
+  -   dqo.e	Input Fraction of degradable organic matter 
+  -   dbo.e	Input BIOdegradable organic matter fraction
+  -   nkt.e	Input Hydrogen potential 
+  -   nh4.e	Input Ammonium concentration
+  -   p.e	Input Phosphor concentration
+  -   ph.d	Decantation Hydrogen potential at the settler
+  -   ss.d	Decantation Solid in Suspension at the settler
+  -   ssv.d	Decantation Suspended Volatile Solids  at the settler
+  -   dqo.d	Decantation Fraction of degradable organic matter at the settler
+  -   dbo.d	Decantation BIOdegradable organic matter fraction at the settler
+  -   nkt.d	Decantation Hydrogen potential at the settler
+  -   nh4.d	Decantation Ammonium concentration at the settler
+  -   p.d	Decantation Phosphor concentration at the settler
+  -   ph.s	Output Hydrogen potential
+  -   ss.s	Output Solid in Suspension 
+  -   ssv.s	Output Suspended Volatile Solids 
+  -   dqo.s	Output Fraction of degradable organic matter 
+  -   dbo.s	Output BIOdegradable organic matter fraction
+  -   nk.s	Unknown 
+  -   nh4.s	Output Ammonium concentration 
+  -   p.s	Output Phosphor concentration 
+  -   v30.b	Biological Volumetric Analysis 
+  -   mlss.b	Biological Mixed Liquor Suspended Solids
+  -   mlvss.b	Biological Volatile solids in suspension liquor mixture 
+  -   im.b	Unknown
+  -   cm1.b	Unknown
+  -   cm2.b	Unknown
+  -   mcrt.b	Biological Cell Age
+  -   trh.c	Unknown (non important)
+  -   dbo.dqoe	Input Quocient DBO.E into DQO.E
+  -   dbo.dqod	Quocient DBO.D into DQO.D at the settler
+  -   dbo.dqos	Output Quocient DBO.S into DQO.S
+  -   weekday	Day of the week
+  -   season	Year season
+
+The data technically correspond to daily measurements and there is a temporal correlation that cannot be dealt with in this subject. You only have to work in this exercise with the data in randomized order. The response variables are considered the fraction of biodegradable organic matter DBO.S, degradable organic matter DQO.S or solids in suspension, either volatile (SSV.S) or not (SS.S) in the OUTPUT of the plant. The response variable DQO.S is initially considered.
+
+**Firstly, load dataset and check available variables.**
+```{r}
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+
+# Clean workspace
+rm(list=ls())
+```
+
+# Load Required Packages for this deliverable
+We load the necessary packages and set working directory
+```{r echo = T, results = 'hide', message=FALSE, error=FALSE, warning=FALSE}
+# Load Required Packages
+options(contrasts=c("contr.treatment","contr.treatment"))
+
+requiredPackages <- c("missMDA","chemometrics","mvoutlier","effects","FactoMineR","car", "factoextra","RColorBrewer","dplyr","ggmap","ggthemes","knitr")
+missingPackages <- requiredPackages[!(requiredPackages %in% installed.packages()[,"Package"])]
+
+if(length(missingPackages)) install.packages(missingPackages)
+lapply(requiredPackages, require, character.only = TRUE)
+```
+
+## Some useful functions
+```{r}
+calcQ <- function(x) { # Function to calculate the different quartiles
+  s.x <- summary(x)
+  iqr<-s.x[5]-s.x[2]
+  list(souti=s.x[2]-3*iqr, mouti=s.x[2]-1.5*iqr, min=s.x[1], q1=s.x[2], q2=s.x[3], 
+       q3=s.x[5], max=s.x[6], mouts=s.x[5]+1.5*iqr, souts=s.x[5]+3*iqr ) 
+}
+
+countNA <- function(x) { # Function to count the NA values
+  mis_x <- NULL
+  for (j in 1:ncol(x)) {mis_x[j] <- sum(is.na(x[,j])) }
+  mis_x <- as.data.frame(mis_x)
+  rownames(mis_x) <- names(x)
+  mis_i <- rep(0,nrow(x))
+  for (j in 1:ncol(x)) {mis_i <- mis_i + as.numeric(is.na(x[,j])) }
+  list(mis_col=mis_x,mis_ind=mis_i) 
+}
+
+countX <- function(x,X) { # Function to count a specific number of appearences
+  n_x <- NULL
+  for (j in 1:ncol(x)) {n_x[j] <- sum(x[,j]==X) }
+  n_x <- as.data.frame(n_x)
+  rownames(n_x) <- names(x)
+  nx_i <- rep(0,nrow(x))
+  for (j in 1:ncol(x)) {nx_i <- nx_i + as.numeric(x[,j]==X) }
+  list(nx_col=n_x,nx_ind=nx_i) 
+}
+```
+
+
+
+```{r}
+setwd("~/Documents/uni/FIB-ADEI/Data and Questions for Quiz 1-20201110")
+load("~/Documents/uni/FIB-ADEI/Data and Questions for Quiz 1-20201110/WasteWater.RData")
+summary(df)
+```
+
+
+**1. Produeix un conjunt de dades aleatori per destruir la correlació en sèrie.**
+```{r}
+set.seed(10121)
+sam<-as.vector(sample(1:nrow(df)))
+```
+
+Verificació i emmagatzematge de la mostra
+```{r}
+head(df)
+df<-df[sam,]
+```
+
+**2. S'han tractat les dades que falten, però algunes NA codificades com a valors 0 encara romanen a fe.e i qp.g i s'han de tractar aplicant eines d'imputació explicades a la classe.**
+
+fe.e
+```{r}
+summary(df$fe.e)
+sel_fe.e <- which(df$fe.e == 0)
+df[sel_fe.e, "fe.e"] <- NA
+summary(df$fe.e)
+```
+
+qp.g
+```{r}
+summary(df$qp.g)
+sel_qp.g <- which(df$qp.g == 0)
+df[sel_qp.g, "qp.g"] <- NA
+summary(df$qp.g)
+```
+
+imputació
+```{r}
+library(missMDA)
+vars_to_impute <- names(df)[c(7,9)]
+res.imputation<-imputePCA(df[,vars_to_impute],ncp=1)
+summary(res.imputation$completeObs)
+df[,vars_to_impute] <- res.imputation$completeObs
+summary(df$fe.e)
+summary(df$qp.g)
+```
+
+
+**3. Els outliers univariants per a la variable de sortida DQO.S també són presents i han de ser tractats. Fes-ho.**
+
+```{r}
+summary(df$dqo.s)
+mean<-mean(df$dqo.s)
+Boxplot(df$dqo.s)
+var_out<-calcQ(df$dqo.s)
+abline(h=var_out$souts,col="red")
+abline(h=var_out$souti,col="red")
+llout<-which((df$dqo.s>150))
+df[llout,"dqo.s"]<-mean
+```
+
+**4. Hi ha outliers multivariants? Troba'ls. Intenta explicar la seva singularitat. Els valors atípics multivariants no es tractaran en aquest exercici: mantingueu-los tal com són.**
+
+```{r}
+library(mvoutlier)
+library(chemometrics)
+names(df)
+multivariant_outliers <- Moutlier(df[, c(4:44)], quantile = 0.995)
+multivariant_outliers$cutoff
+par(mfrow=c(1,1))
+plot(multivariant_outliers$md, multivariant_outliers$rd, type="n")
+text(multivariant_outliers$md, multivariant_outliers$rd, labels=rownames(df[, c(4:44)])) 
+abline(col="red",lwd=2, h=qchisq(0.995, ncol(df[, c(4:44)])))
+```
+
+Singularitat:
+```{r}
+df[which(row.names(df)=="157"), 1:46]
+```
+
+**5. Indiqueu-ho mitjançant eines d’anàlisi de dades exploratòries que aparentment són les variables més associades a la variable de resposta (utilitzeu només les variables indicades). Utilitzeu també eines de perfilat FactoMineR. **
+
+```{r}
+vars_res<-names(df)[c(29)]
+vars_quantitatives<-names(df)[c(4:28, 30:44)]
+vars_categorical<-names(df)[c(45:46)]
+
+res.condes <- condes(df[, c(vars_res,vars_quantitatives, vars_categorical)],1)
+res.condes$quanti
+res.condes$quali
+res.condes$category
+```
+
+**6. Definiu els factors politòmics f.dbo.s, f.dqo.s, f.sst.s (de SSV.S més SS.S) per a les covariables segons el límit legal (DBO 25 mg/l O2, DQO 125 mg/l O2 i sòlids totals en suspensió 35 mg/l). Perfil factor f.dqo.s.**
+
+Factoritzar:
+```{r}
+
+# f.dbo.s DBO 25 mg/l O2
+table(df$dbo.s)
+df$dbo.s[df$dbo.s <= 25] = 0
+df$dbo.s[df$dbo.s > 25] = 1
+df$f.dbo.s <- factor(df$dbo.s, labels =c("Legal","Ilegal"))
+
+# f.dqo.s DQO 125 mg/l O2
+table(df$dqo.s)
+df$dqo.s[df$dqo.s <= 125] = 0
+df$dqo.s[df$dqo.s > 125] = 1
+df$f.dqo.s <- factor(df$dqo.s, labels =c("Legal","Ilegal"))
+
+# f.sst.s 35 mg/l
+df$sst.s=rowSums(cbind(df$ssv.s,df$ss.s),na.rm=TRUE)
+table(df$sst.s)
+df$sst.s[df$sst.s <= 35] = 0
+df$sst.s[df$sst.s > 35] = 1
+df$f.sst.s <- factor(df$sst.s, labels =c("Legal","Ilegal"))
+```
+
+Profiling de f.dqo.s:
+```{r}
+vars_res<-names(df)[c(48)]
+vars_quantitatives<-names(df)[c(4:44)]
+vars_categorical<-names(df)[c(45:47, 50)]
+
+res.catdes <- catdes(df[, c(vars_res,vars_quantitatives, vars_categorical)],1)
+res.catdes$test.chi2
+res.catdes$quanti.var
+res.catdes$category
+```
+
+
+**7. Una anàlisi normalitzada de components principals s'aborda utilitzant com a variables addicionals disponibles el factor disponible i les variables de sortida de xxxx.s.  **
+
+```{r}
+names(df)
+names(df[, c(4:30,32:36,40,45:46)])
+res.pca <- PCA(df[, c(4:30,32:36,40,45:46)], quanti.sup=c(23:29), quali.sup=c(34:35))
+summary(res.pca,nbind=0,nbelements = 25)
+
+fviz_screeplot(
+  res.pca, 
+  barfill = "darkslateblue",
+  barcolor = "darkslateblue",
+  linecolor = "red",
+  ggtheme = theme_gray())
+```
+
+Quants eixos heu de conservar segons els criteris de Kaiser? 9 dimensions.
+I segons la regla de Elbow? 5 dimensions.
+Quina és la inèrcia que expliquen els components principals conservats basats en Kaiser? 80.675%
+
+**7. Intenta explicar el significat dels eixos en el primer pla factorial. Quines són les 3 variables amb més correlació amb el primer pla factorial?**
+
+```{r}
+summary(res.pca,nb.dec=2,nbind=0,nbelements = 25,ncp=2)
+ddd<-dimdesc(res.pca,axes=1:2)
+ddd$Dim.1
+ddd$Dim.2
+```
+
+Eix 1:
+* És difícil resumir-lo, però la correlació positiva amb l’eix 1 és 
+  + ssv.d 
+  + ssv.e
+* i negativa correlacionada amb 
+  * mcrt.b
+  * mlss.b 
+
+Eix 2:
+* Per a l'eix 2, apareix una correlació positiva per a 
+  + p.e
+  + p.d
+* s'associa inversament a 
+  + qp.g
+  + nkt.d
+
+**8.	A Hierarchical Clustering is addressed. How many clusters are needed to represent 60% of the total inertia.**
+```{r}
+# 6 dimensions have to be selected according to Kaiser's criteria
+res.pca <- PCA(df[, c(4:30,32:36,40,45:46)], quanti.sup=c(23:29), quali.sup=c(34:35))
+res.hcpc <- HCPC(res.pca,nb.clust=7, graph=T)
+res.hcpc$desc.var
+(res.hcpc$call$t$within[1]-res.hcpc$call$t$within[7])/res.hcpc$call$t$within[1] # representació de la inèrcia
+```
+
+Clusters: 7.
+Inèrcia: 62.86%
+
+**9.	A nondefault criteria for selecting the number of clusters to 3 has to be set. Explain the characteristics of cluster number 3.**
+```{r}
+# 6 dimensions have to be selected according to Kaiser's criteria
+res.pca <- PCA(df[, c(4:30,32:36,40,45:46)], quanti.sup=c(23:29), quali.sup=c(34:35))
+res.hcpc <- HCPC(res.pca,nb.clust=3, graph=T)
+(res.hcpc$call$t$within[1]-res.hcpc$call$t$within[3])/res.hcpc$call$t$within[1] # representació de la inèrcia
+```
+
+**10.	Use a partition method to group available data into the selected number of clusters found in Question 7. Determine the quality of the partition and plot the resulting partition in the first factorial plane.**
+
+```{r}
+# Ja no m'ha donat temps.
+```
+
+**Do not forget to Knit to .pdf before posting your answers in ATENEA. **
